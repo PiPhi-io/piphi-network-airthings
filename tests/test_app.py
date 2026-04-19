@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import pytest
+
+from piphi_network_airthings.cloud.client import AirthingsCloudAuthError, AirthingsCloudRequestError
+
+
+@pytest.mark.asyncio
+async def test_discover_returns_cloud_devices(async_client, fake_cloud_client) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["radonShortTermAvg", "temp", "humidity", "co2", "voc", "pressure"],
+        }
+    }
+
+    response = await async_client.post(
+        "/discover",
+        json={
+            "inputs": {
+                "client_id": "client-1",
+                "client_secret": "secret-1",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["devices"][0]["serial_number"] == "2930046980"
+    assert payload["devices"][0]["device_model"] == "WAVE_PLUS"
+    assert payload["devices"][0]["client_id"] == "client-1"
+
+
+@pytest.mark.asyncio
+async def test_discover_accepts_flat_core_payload(async_client, fake_cloud_client) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["radonShortTermAvg", "temp", "humidity"],
+        }
+    }
+
+    response = await async_client.post(
+        "/discover",
+        json={
+            "client_id": "client-1",
+            "client_secret": "secret-1",
+            "serial_number": "2930046980",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["devices"]) == 1
+    assert payload["devices"][0]["serial_number"] == "2930046980"
+    assert fake_cloud_client.list_devices_calls == ["client-1"]
+
+
+@pytest.mark.asyncio
+async def test_config_sync_configures_and_refreshes_multiple_devices(async_client, fake_cloud_client) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["radonShortTermAvg", "temp", "humidity", "co2", "voc", "pressure"],
+        },
+        "2950123456": {
+            "serialNumber": "2950123456",
+            "name": "Office Wave Radon",
+            "type": "WAVE_RADON",
+            "sensors": ["radonShortTermAvg", "temp", "humidity"],
+        },
+    }
+    fake_cloud_client.samples = {
+        "2930046980": {
+            "data": {
+                "recorded": "2026-04-18T18:30:00+00:00",
+                "radonShortTermAvg": 55,
+                "temp": 21.4,
+                "humidity": 44,
+                "co2": 812,
+                "voc": 88,
+                "pressure": 1011.5,
+                "battery": 94,
+            }
+        },
+        "2950123456": {
+            "data": {
+                "recorded": "2026-04-18T18:31:00+00:00",
+                "radonShortTermAvg": 72,
+                "temp": 19.2,
+                "humidity": 40,
+                "battery": 91,
+            }
+        },
+    }
+
+    response = await async_client.post(
+        "/configs/sync",
+        json={
+            "container_id": "container-1",
+            "integration_id": "airthings-consumer-cloud-api",
+            "generation": 4,
+            "reason": "test_sync",
+            "configs": [
+                {
+                    "id": "cfg-1",
+                    "client_id": "client-1",
+                    "client_secret": "secret-1",
+                    "serial_number": "2930046980",
+                },
+                {
+                    "id": "cfg-2",
+                    "client_id": "client-1",
+                    "client_secret": "secret-1",
+                    "serial_number": "2950123456",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "synced"
+
+    entities_response = await async_client.get("/entities")
+    state_response = await async_client.get("/state")
+    refresh_response = await async_client.post(
+        "/command",
+        json={"command": "refresh", "entity_id": "device:cfg-1"},
+    )
+
+    entities_payload = entities_response.json()
+    state_payload = state_response.json()
+
+    assert len(entities_payload["entities"]) == 2
+    assert state_payload["state"]["cfg-1"]["state"]["co2_ppm"] == 812.0
+    assert state_payload["state"]["cfg-2"]["state"]["radon_short_term_bqm3"] == 72.0
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["state"]["temperature_c"] == 21.4
+
+
+@pytest.mark.asyncio
+async def test_config_apply_records_initial_read_error(async_client, fake_cloud_client) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["radonShortTermAvg", "temp"],
+        }
+    }
+    fake_cloud_client.latest_sample_failures["2930046980"] = AirthingsCloudRequestError("cloud unavailable")
+
+    response = await async_client.post(
+        "/config",
+        json={
+            "id": "cfg-1",
+            "client_id": "client-1",
+            "client_secret": "secret-1",
+            "serial_number": "2930046980",
+        },
+    )
+
+    assert response.status_code == 200
+
+    state_response = await async_client.get("/state")
+    events_response = await async_client.get("/events")
+    diagnostics_response = await async_client.get("/diagnostics")
+
+    state_payload = state_response.json()
+    events_payload = events_response.json()
+    diagnostics_payload = diagnostics_response.json()
+
+    assert state_payload["state"]["cfg-1"]["state"]["connected"] is False
+    assert "cloud unavailable" in state_payload["state"]["cfg-1"]["state"]["last_error"]
+    assert any(event["event_type"] == "airthings.cloud.initial_read.failed" for event in events_payload["events"])
+    assert "cfg-1" in diagnostics_payload["diagnostics"]["poll_task_ids"]
+
+
+@pytest.mark.asyncio
+async def test_discover_returns_auth_error_when_token_exchange_fails(async_client, fake_cloud_client) -> None:
+    async def fail_list_devices(_credentials):
+        raise AirthingsCloudAuthError("Airthings consumer cloud credentials were rejected.")
+
+    fake_cloud_client.list_devices = fail_list_devices
+
+    response = await async_client.post(
+        "/discover",
+        json={
+            "inputs": {
+                "client_id": "client-1",
+                "client_secret": "secret-1",
+            }
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Airthings consumer cloud credentials were rejected."

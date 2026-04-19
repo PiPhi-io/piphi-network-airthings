@@ -1,0 +1,104 @@
+{
+  "devices": [
+    {
+      "id": "airthings_cloud_monitor",
+      "name": "Airthings Cloud Monitor",
+      "description": "Consumer Airthings monitor synchronized through the Airthings cloud account.",
+      "capabilities": [
+        "radon_short_term_bqm3",
+        "radon_long_term_bqm3",
+        "temperature_c",
+        "humidity_percent",
+        "pressure_hpa",
+        "co2_ppm",
+        "voc_ppb",
+        "pm1_ugm3",
+        "pm25_ugm3",
+        "battery_percent",
+        "refresh"
+      ],
+      "intents": [
+        {
+          "id": "air_quality_monitoring",
+          "label": "Air quality monitoring",
+          "description": "Track radon, particles, carbon dioxide, VOCs, and comfort conditions from Airthings cloud data."
+        },
+        {
+          "id": "safety_alerting",
+          "label": "Safety alerting",
+          "description": "Trigger warnings when air quality or battery levels cross critical thresholds."
+        }
+      ],
+      "conditions": [
+        {
+          "id": "metric_above",
+          "label": "Metric above threshold",
+          "type": "number",
+          "params": [
+            {
+              "name": "metric",
+              "label": "Metric",
+              "type": "enum",
+              "required": true,
+              "options": [
+                "radon_short_term_bqm3",
+                "radon_long_term_bqm3",
+                "temperature_c",
+                "humidity_percent",
+                "pressure_hpa",
+                "co2_ppm",
+                "voc_ppb",
+                "pm1_ugm3",
+                "pm25_ugm3",
+                "battery_percent"
+              ]
+            },
+            {
+              "name": "value",
+              "label": "Threshold",
+              "type": "number",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "metric_below",
+          "label": "Metric below threshold",
+          "type": "number",
+          "params": [
+            {
+              "name": "metric",
+              "label": "Metric",
+              "type": "enum",
+              "required": true,
+              "options": [
+                "radon_short_term_bqm3",
+                "radon_long_term_bqm3",
+                "temperature_c",
+                "humidity_percent",
+                "pressure_hpa",
+                "co2_ppm",
+                "voc_ppb",
+                "pm1_ugm3",
+                "pm25_ugm3",
+                "battery_percent"
+              ]
+            },
+            {
+              "name": "value",
+              "label": "Threshold",
+              "type": "number",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "id": "refresh",
+          "label": "Refresh latest sample"
+        }
+      ]
+    }
+  ]
+}

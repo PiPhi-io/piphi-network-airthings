@@ -1,0 +1,261 @@
+{
+  "manifest_version": "1.0",
+  "id": "airthings-consumer-cloud-api",
+  "name": "Airthings (Consumer Cloud)",
+  "version": "0.1.0",
+  "description": "Cloud integration for Airthings consumer accounts using the official Airthings Consumer API.",
+  "maintainer": {
+    "name": "PiPhi Network",
+    "website": "https://piphi.io",
+    "support_email": "support@piphi.io"
+  },
+  "platforms": [
+    "linux",
+    "windows",
+    "macos"
+  ],
+  "runtime": {
+    "linux": {
+      "type": "container",
+      "container": {
+        "image": "piphinetwork/airthings-consumer-cloud",
+        "ports": [
+          {
+            "container": 3669,
+            "host": 3669
+          }
+        ],
+        "environment": {
+          "LOG_LEVEL": "info"
+        },
+        "restart_policy": {
+          "name": "unless-stopped",
+          "maximum_retry_count": 0
+        }
+      },
+      "discovery": {
+        "method": "direct",
+        "inputs": [
+          {
+            "name": "client_id",
+            "label": "Client ID",
+            "type": "text",
+            "required": true,
+            "description": "Consumer API client id created from the Airthings dashboard integrations page."
+          },
+          {
+            "name": "client_secret",
+            "label": "Client Secret",
+            "type": "password",
+            "secret": true,
+            "required": true,
+            "description": "Consumer API client secret for the Airthings account that owns the devices."
+          },
+          {
+            "name": "serial_number",
+            "label": "Serial Number Filter",
+            "type": "text",
+            "required": false,
+            "description": "Optional serial number filter to narrow discovery to a single Airthings device."
+          }
+        ]
+      }
+    },
+    "windows": {
+      "type": "proxy",
+      "proxy": {
+        "port": 3669
+      },
+      "discovery": {
+        "method": "proxy",
+        "inputs": [
+          {
+            "name": "client_id",
+            "label": "Client ID",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "client_secret",
+            "label": "Client Secret",
+            "type": "password",
+            "secret": true,
+            "required": true
+          },
+          {
+            "name": "serial_number",
+            "label": "Serial Number Filter",
+            "type": "text",
+            "required": false
+          }
+        ]
+      }
+    },
+    "macos": {
+      "type": "proxy",
+      "proxy": {
+        "port": 3669
+      },
+      "discovery": {
+        "method": "proxy",
+        "inputs": [
+          {
+            "name": "client_id",
+            "label": "Client ID",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "client_secret",
+            "label": "Client Secret",
+            "type": "password",
+            "secret": true,
+            "required": true
+          },
+          {
+            "name": "serial_number",
+            "label": "Serial Number Filter",
+            "type": "text",
+            "required": false
+          }
+        ]
+      }
+    }
+  },
+  "api": {
+    "base_url": "http://127.0.0.1:3669",
+    "endpoints": {
+      "health": "/health",
+      "discover": "/discover",
+      "entities": "/entities",
+      "state": "/state",
+      "command": "/command",
+      "config": "/config",
+      "config_sync": "/configs/sync",
+      "deconfigure": "/deconfigure",
+      "ui_config": "/ui-config",
+      "events": "/events",
+      "diagnostics": "/diagnostics"
+    }
+  },
+  "config": {
+    "source": "endpoint",
+    "endpoint": "/ui-config",
+    "required": true
+  },
+  "identity": {
+    "fields": [
+      "serial_number"
+    ]
+  },
+  "capabilities": {
+    "radon_short_term_bqm3": {
+      "kind": "sensor",
+      "unit": "Bq/m3",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "radon_long_term_bqm3": {
+      "kind": "sensor",
+      "unit": "Bq/m3",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "temperature_c": {
+      "kind": "sensor",
+      "unit": "°C",
+      "dashboard": {
+        "allowed_widgets": ["sensor-card", "stat", "line-chart", "gauge"],
+        "default_widget": "sensor-card"
+      }
+    },
+    "humidity_percent": {
+      "kind": "sensor",
+      "unit": "%",
+      "dashboard": {
+        "allowed_widgets": ["sensor-card", "stat", "line-chart", "gauge"],
+        "default_widget": "sensor-card"
+      }
+    },
+    "pressure_hpa": {
+      "kind": "sensor",
+      "unit": "hPa",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "co2_ppm": {
+      "kind": "sensor",
+      "unit": "ppm",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "voc_ppb": {
+      "kind": "sensor",
+      "unit": "ppb",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "pm1_ugm3": {
+      "kind": "sensor",
+      "unit": "µg/m3",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "pm25_ugm3": {
+      "kind": "sensor",
+      "unit": "µg/m3",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
+    "battery_percent": {
+      "kind": "sensor",
+      "unit": "%",
+      "dashboard": {
+        "allowed_widgets": ["stat", "gauge"],
+        "default_widget": "gauge"
+      }
+    },
+    "refresh": {
+      "kind": "action",
+      "dashboard": {
+        "allowed_widgets": ["button"],
+        "default_widget": "button"
+      }
+    }
+  },
+  "entities": [
+    {
+      "id": "airthings_cloud_monitor",
+      "name": "Airthings Cloud Monitor",
+      "device_class": "air_quality_monitor",
+      "entity_type": "sensor",
+      "capabilities": [
+        "radon_short_term_bqm3",
+        "radon_long_term_bqm3",
+        "temperature_c",
+        "humidity_percent",
+        "pressure_hpa",
+        "co2_ppm",
+        "voc_ppb",
+        "pm1_ugm3",
+        "pm25_ugm3",
+        "battery_percent",
+        "refresh"
+      ]
+    }
+  ]
+}
