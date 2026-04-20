@@ -15,6 +15,9 @@ DEVICE_TYPE_NAMES = {
     "CORENTIUM_HOME_2": "Airthings Corentium Home 2",
 }
 
+MOLD_RISK_METRIC_KEY = "mold_risk_level"
+MOLD_RISK_SUPPORTED_DEVICE_TYPES = frozenset({"WAVE_MINI"})
+
 _DEFAULT_UNITS = {
     "radon_short_term_bqm3": "Bq/m3",
     "radon_long_term_bqm3": "Bq/m3",
@@ -27,6 +30,7 @@ _DEFAULT_UNITS = {
     "pm25_ugm3": "ug/m3",
     "battery_percent": "%",
     "rssi_dbm": "dBm",
+    MOLD_RISK_METRIC_KEY: "score",
 }
 
 
@@ -193,6 +197,7 @@ def capabilities_for_device(device: AirthingsCloudDevice, sample: AirthingsLates
         "pm1_ugm3",
         "pm25_ugm3",
         "battery_percent",
+        MOLD_RISK_METRIC_KEY,
     ]
     if sample is not None:
         present = [capability for capability in candidates if sample.metrics.get(capability) is not None]
@@ -216,6 +221,12 @@ def capabilities_for_device(device: AirthingsCloudDevice, sample: AirthingsLates
                 present.append(capability)
         if "battery_percent" not in present:
             present.append("battery_percent")
+    if supports_mold_risk(device.device_type) and MOLD_RISK_METRIC_KEY not in present:
+        present.append(MOLD_RISK_METRIC_KEY)
     if "refresh" not in present:
         present.append("refresh")
     return present
+
+
+def supports_mold_risk(device_type: str | None) -> bool:
+    return str(device_type or "").strip().upper() in MOLD_RISK_SUPPORTED_DEVICE_TYPES

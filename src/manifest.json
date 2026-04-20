@@ -181,6 +181,14 @@
         "default_widget": "sensor-card"
       }
     },
+    "mold_risk_level": {
+      "kind": "sensor",
+      "unit": "score",
+      "dashboard": {
+        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "default_widget": "stat"
+      }
+    },
     "pressure_hpa": {
       "kind": "sensor",
       "unit": "hPa",
@@ -248,6 +256,7 @@
         "radon_long_term_bqm3",
         "temperature_c",
         "humidity_percent",
+        "mold_risk_level",
         "pressure_hpa",
         "co2_ppm",
         "voc_ppb",

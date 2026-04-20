@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -42,7 +43,13 @@ from .cloud.client import (
     AirthingsCloudRequestError,
     AirthingsCredentials,
 )
-from .cloud.models import AirthingsCloudDevice, AirthingsLatestSample, capabilities_for_device
+from .cloud.models import (
+    MOLD_RISK_METRIC_KEY,
+    AirthingsCloudDevice,
+    AirthingsLatestSample,
+    capabilities_for_device,
+    supports_mold_risk,
+)
 from .manifest import load_manifest
 
 
@@ -51,6 +58,7 @@ INTEGRATION_ID = str(manifest.get("id") or "airthings-consumer-cloud-api")
 INTEGRATION_NAME = str(manifest.get("name") or "Airthings (Consumer Cloud)")
 INTEGRATION_VERSION = str(manifest.get("version") or "0.1.0")
 DEFAULT_POLL_INTERVAL_SECONDS = 300
+MOLD_RISK_WINDOW_HOURS = 48
 logger = logging.getLogger(__name__)
 
 starter = create_runtime_starter(
@@ -172,6 +180,104 @@ def _filtered_telemetry_payload(
     return filtered_metrics, filtered_units or None, dropped_metrics
 
 
+def _parse_sample_timestamp(recorded_at: str) -> datetime:
+    normalized = str(recorded_at).replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _mold_history(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    history = entry.get("mold_history")
+    if isinstance(history, list):
+        return history
+    created: list[dict[str, Any]] = []
+    entry["mold_history"] = created
+    return created
+
+
+def _mold_exposure_score(*, temperature_c: float, humidity_percent: float) -> float:
+    humidity_factor = min(max((humidity_percent - 75.0) / 15.0, 0.0), 1.0)
+    if temperature_c < 5.0 or temperature_c > 35.0:
+        temperature_factor = 0.35
+    elif temperature_c < 10.0 or temperature_c > 30.0:
+        temperature_factor = 0.6
+    else:
+        temperature_factor = 1.0
+    return humidity_factor * temperature_factor
+
+
+def _compute_mold_risk_level(
+    *,
+    entry: dict[str, Any],
+    sample: AirthingsLatestSample,
+) -> int | None:
+    if not supports_mold_risk(entry.get("device_model")):
+        return None
+
+    temperature_c = sample.metrics.get("temperature_c")
+    humidity_percent = sample.metrics.get("humidity_percent")
+    if temperature_c is None or humidity_percent is None:
+        return None
+
+    sample_time = _parse_sample_timestamp(sample.recorded_at)
+    cutoff = sample_time - timedelta(hours=MOLD_RISK_WINDOW_HOURS)
+    history = _mold_history(entry)
+    retained = [
+        item for item in history
+        if isinstance(item, dict)
+        and "recorded_at" in item
+        and _parse_sample_timestamp(str(item["recorded_at"])) >= cutoff
+    ]
+    retained = [
+        item for item in retained
+        if str(item.get("recorded_at")) != sample.recorded_at
+    ]
+    retained.append(
+        {
+            "recorded_at": sample.recorded_at,
+            "temperature_c": float(temperature_c),
+            "humidity_percent": float(humidity_percent),
+        }
+    )
+    retained.sort(key=lambda item: str(item["recorded_at"]))
+    history[:] = retained
+
+    window_seconds = float(timedelta(hours=MOLD_RISK_WINDOW_HOURS).total_seconds())
+    poll_interval_seconds = max(int(entry.get("poll_interval_seconds") or DEFAULT_POLL_INTERVAL_SECONDS), 60)
+    weighted_exposure = 0.0
+    covered_seconds = 0.0
+
+    for index, item in enumerate(retained):
+        current_time = _parse_sample_timestamp(str(item["recorded_at"]))
+        if index + 1 < len(retained):
+            next_time = _parse_sample_timestamp(str(retained[index + 1]["recorded_at"]))
+            interval_seconds = max((next_time - current_time).total_seconds(), 0.0)
+        else:
+            interval_seconds = float(poll_interval_seconds)
+        weighted_exposure += _mold_exposure_score(
+            temperature_c=float(item["temperature_c"]),
+            humidity_percent=float(item["humidity_percent"]),
+        ) * interval_seconds
+        covered_seconds += interval_seconds
+
+    if covered_seconds <= 0:
+        return None
+
+    average_exposure = weighted_exposure / covered_seconds
+    coverage_factor = min(covered_seconds / window_seconds, 1.0)
+    risk_level = round(max(min(average_exposure * coverage_factor * 10.0, 10.0), 0.0))
+    logger.info(
+        "airthings_mold_risk_computed %s sampled_at=%s risk_level=%s coverage_hours=%.2f",
+        _entry_log_label(entry),
+        sample.recorded_at,
+        risk_level,
+        covered_seconds / 3600.0,
+    )
+    return int(risk_level)
+
+
 def _append_runtime_event(
     *,
     event_type: str,
@@ -286,10 +392,20 @@ def _update_state_snapshot(
     entry: dict[str, Any],
     sample: AirthingsLatestSample,
 ) -> None:
+    derived_metrics = dict(sample.metrics)
+    derived_units = dict(sample.units)
+    mold_risk_level = _compute_mold_risk_level(entry=entry, sample=sample)
+    if mold_risk_level is not None:
+        derived_metrics[MOLD_RISK_METRIC_KEY] = mold_risk_level
+        derived_units[MOLD_RISK_METRIC_KEY] = "score"
+
+    state_payload = sample.state_payload()
+    if mold_risk_level is not None:
+        state_payload[MOLD_RISK_METRIC_KEY] = mold_risk_level
     registry.update_state(
         config_id,
         {
-            **sample.state_payload(),
+            **state_payload,
             "connected": True,
             "serial_number": entry["serial_number"],
             "device_model": entry.get("device_model"),
@@ -298,13 +414,13 @@ def _update_state_snapshot(
         },
     )
     metrics = {
-        **sample.metrics,
+        **derived_metrics,
         "connected": True,
         "read_failed": False,
     }
     filtered_metrics, filtered_units, dropped_metrics = _filtered_telemetry_payload(
         metrics=metrics,
-        units=sample.units,
+        units=derived_units,
     )
     if dropped_metrics:
         logger.info(
@@ -362,8 +478,18 @@ async def _read_and_store(config_id: str) -> AirthingsLatestSample:
 
 async def _poll_config(config_id: str, interval_seconds: int) -> None:
     logger.info("airthings_poll_started config_id=%s interval_seconds=%s", config_id, interval_seconds)
+    first_iteration = True
     while True:
         try:
+            if first_iteration:
+                _update_poll_status(
+                    config_id,
+                    next_poll_due=(
+                        asyncio.get_running_loop().time() + interval_seconds
+                    ),
+                )
+                first_iteration = False
+                await asyncio.sleep(interval_seconds)
             sample = await _read_and_store(config_id)
             _update_poll_status(
                 config_id,
@@ -614,6 +740,7 @@ def _build_entities_payload() -> list[dict[str, Any]]:
                     for key in (
                         "radon_short_term_bqm3",
                         "radon_long_term_bqm3",
+                        MOLD_RISK_METRIC_KEY,
                         "temperature_c",
                         "humidity_percent",
                         "pressure_hpa",

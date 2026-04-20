@@ -8,7 +8,13 @@ from .client import (
     AirthingsCloudRequestError,
     AirthingsCredentials,
 )
-from .models import AirthingsCloudDevice, AirthingsLatestSample, capabilities_for_device
+from .models import (
+    MOLD_RISK_METRIC_KEY,
+    AirthingsCloudDevice,
+    AirthingsLatestSample,
+    capabilities_for_device,
+    supports_mold_risk,
+)
 
 __all__ = [
     "AirthingsCloudAuthError",
@@ -19,5 +25,7 @@ __all__ = [
     "AirthingsCloudRequestError",
     "AirthingsCredentials",
     "AirthingsLatestSample",
+    "MOLD_RISK_METRIC_KEY",
     "capabilities_for_device",
+    "supports_mold_risk",
 ]
