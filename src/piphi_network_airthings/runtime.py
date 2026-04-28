@@ -28,6 +28,7 @@ from piphi_runtime_kit_python import (
     build_local_event_record,
     create_runtime_starter,
     create_tracked_task,
+    resolve_core_base_url,
     schedule_event_delivery,
     schedule_telemetry_delivery,
     validate_typed_configs,
@@ -65,6 +66,7 @@ starter = create_runtime_starter(
     integration_id=INTEGRATION_ID,
     integration_name=INTEGRATION_NAME,
     version=INTEGRATION_VERSION,
+    core_base_url=resolve_core_base_url("http://127.0.0.1:31419"),
 )
 runtime = starter.runtime
 registry = starter.registry
@@ -913,10 +915,7 @@ async def config(payload: AirthingsCloudConfig, request: Request) -> RuntimeConf
     )
 
 
-@router.post("/configs/sync")
-@router.post("/config/sync")
-async def configs_sync(payload: RuntimeConfigSnapshot, request: Request) -> RuntimeConfigSyncResponse:
-    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+async def apply_runtime_config_snapshot(payload: RuntimeConfigSnapshot) -> RuntimeConfigSyncResponse:
     logger.info(
         "airthings_config_sync_started container_id=%s generation=%s incoming_configs=%s reason=%s",
         payload.container_id,
@@ -952,6 +951,13 @@ async def configs_sync(payload: RuntimeConfigSnapshot, request: Request) -> Runt
         result.status,
     )
     return result
+
+
+@router.post("/configs/sync")
+@router.post("/config/sync")
+async def configs_sync(payload: RuntimeConfigSnapshot, request: Request) -> RuntimeConfigSyncResponse:
+    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+    return await apply_runtime_config_snapshot(payload)
 
 
 @router.post("/deconfigure")

@@ -10,7 +10,7 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "httpx>=0.27.0",
     "pydantic>=2.9.0",
-    "piphi-runtime-kit-python @ file:///${PROJECT_ROOT}/../piphi-runtime-kit-python",
+    "piphi-runtime-kit-python==0.4.5",
 ]
 requires-python = "==3.12.*"
 readme = "README.md"
