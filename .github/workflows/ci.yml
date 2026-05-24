@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      - name: Check out runtime testkit
+        uses: actions/checkout@v4
+        with:
+          repository: PiPhi-io/piphi-runtime-testkit-python
+          path: piphi-runtime-testkit-python
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        working-directory: current
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run compile check
+        working-directory: current
+        env:
+          PYTHONPATH: src
+        run: python -m compileall -q src tests
+
+      - name: Validate manifest JSON
+        working-directory: current
+        run: python -m json.tool src/manifest.json >/dev/null
+
+      - name: Run tests
+        working-directory: current
+        env:
+          PYTHONPATH: src
+        run: pytest

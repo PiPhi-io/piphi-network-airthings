@@ -18,7 +18,7 @@
     "linux": {
       "type": "container",
       "container": {
-        "image": "piphinetwork/airthings-consumer-cloud",
+        "image": "piphinetwork/airthings-consumer-cloud:0.1.0",
         "ports": [
           {
             "container": 3669,
