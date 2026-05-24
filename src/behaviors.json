@@ -61,7 +61,27 @@
               "type": "number",
               "required": true
             }
-          ]
+          ],
+          "capability": "sensor.metric_above",
+          "operators": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "eq"
+          ],
+          "runtime": {
+            "source": "state",
+            "field": "metric_above",
+            "operator": ">"
+          },
+          "freshness": {
+            "maxAgeSeconds": 300,
+            "staleDataMode": "block"
+          },
+          "ui": {
+            "group": "only_if"
+          }
         },
         {
           "id": "metric_below",
@@ -93,15 +113,246 @@
               "type": "number",
               "required": true
             }
-          ]
+          ],
+          "capability": "sensor.metric_below",
+          "operators": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "eq"
+          ],
+          "runtime": {
+            "source": "state",
+            "field": "metric_below",
+            "operator": ">"
+          },
+          "freshness": {
+            "maxAgeSeconds": 300,
+            "staleDataMode": "block"
+          },
+          "ui": {
+            "group": "only_if"
+          }
         }
       ],
       "actions": [
         {
           "id": "refresh",
-          "label": "Refresh latest sample"
+          "label": "Refresh latest sample",
+          "capability": "device.refresh",
+          "runtime": {
+            "command": "refresh"
+          },
+          "targeting": {
+            "fanoutSafe": true,
+            "scopes": [
+              "config",
+              "configs",
+              "room",
+              "rooms",
+              "group",
+              "groups",
+              "selection",
+              "tag",
+              "tags",
+              "capability",
+              "all_matching"
+            ],
+            "supportsMultiTarget": true
+          },
+          "failure": {
+            "strategy": "retry_then_continue",
+            "retry": {
+              "maxAttempts": 1,
+              "delaySeconds": 2,
+              "backoff": "fixed"
+            },
+            "timeoutSeconds": 30,
+            "continueOnPartialFailure": true,
+            "idempotent": true
+          },
+          "ui": {
+            "group": "do_this"
+          }
+        }
+      ],
+      "deviceClass": "air_quality_sensor",
+      "entityType": "sensor",
+      "targeting": {
+        "scopes": [
+          "config",
+          "configs",
+          "room",
+          "rooms",
+          "group",
+          "groups",
+          "selection",
+          "tag",
+          "tags",
+          "capability",
+          "all_matching"
+        ],
+        "fanout": {
+          "supported": true,
+          "defaultMode": "selection",
+          "allowedModes": [
+            "config",
+            "configs",
+            "room",
+            "rooms",
+            "group",
+            "groups",
+            "tag",
+            "tags",
+            "capability",
+            "selection",
+            "all_matching"
+          ]
+        }
+      },
+      "freshness": {
+        "maxAgeSeconds": 300,
+        "staleDataMode": "block"
+      },
+      "ui": {
+        "icon": "wind",
+        "category": "air_quality_sensor"
+      },
+      "triggers": [
+        {
+          "id": "state_changed",
+          "label": "Device updates",
+          "description": "Start when this device reports a new state.",
+          "capability": "telemetry.state",
+          "runtime": {
+            "event": "device.state_changed",
+            "source": "integration"
+          },
+          "freshness": {
+            "maxAgeSeconds": 300,
+            "staleDataMode": "block"
+          },
+          "ui": {
+            "group": "when"
+          }
         }
       ]
     }
-  ]
+  ],
+  "templates": [
+    {
+      "id": "airthings_air_quality_check",
+      "label": "Watch for unhealthy Airthings readings",
+      "description": "Starts when Airthings cloud data changes and refreshes the saved monitor when a key metric rises.",
+      "category": "Air quality",
+      "deviceKey": "airthings_cloud_monitor",
+      "config": {
+        "automation_schema_version": "automation.behavior.v2",
+        "triggers": [
+          {
+            "id": "state_changed",
+            "label": "Airthings reading changes",
+            "type": "integration_event",
+            "event": "device.state_changed",
+            "capability": "telemetry.state",
+            "enabled": true,
+            "sourceRef": {
+              "integrationId": "{{integrationId}}",
+              "integrationKey": "{{integrationKey}}",
+              "configId": "{{configId}}",
+              "behaviorDeviceKey": "airthings_cloud_monitor",
+              "optionKey": "state_changed",
+              "capability": "telemetry.state"
+            }
+          }
+        ],
+        "trigger": {
+          "id": "state_changed",
+          "label": "Airthings reading changes",
+          "type": "integration_event",
+          "event": "device.state_changed",
+          "capability": "telemetry.state",
+          "enabled": true
+        },
+        "intent": "air_quality_monitoring",
+        "conditionTree": {
+          "id": "co2_ppm_above_template",
+          "label": "CO2 is above 1000 ppm",
+          "field": "co2_ppm",
+          "operator": ">",
+          "value": 1000,
+          "sourceRef": {
+            "integrationId": "{{integrationId}}",
+            "integrationKey": "{{integrationKey}}",
+            "configId": "{{configId}}",
+            "behaviorDeviceKey": "airthings_cloud_monitor",
+            "optionKey": "metric_above",
+            "capability": "sensor.metric_above"
+          }
+        },
+        "actions": [
+          {
+            "id": "refresh_readings",
+            "label": "Refresh Airthings readings",
+            "action": "refresh",
+            "capability": "device.refresh",
+            "sourceRef": {
+              "integrationId": "{{integrationId}}",
+              "integrationKey": "{{integrationKey}}",
+              "configId": "{{configId}}",
+              "behaviorDeviceKey": "airthings_cloud_monitor",
+              "optionKey": "refresh",
+              "capability": "device.refresh"
+            },
+            "target": {
+              "mode": "selection",
+              "configIds": [
+                "{{configId}}"
+              ]
+            },
+            "failure": {
+              "strategy": "retry_then_continue",
+              "retry": {
+                "maxAttempts": 2,
+                "delaySeconds": 2,
+                "timeoutSeconds": 15,
+                "backoff": "fixed"
+              },
+              "continueOnPartialFailure": true
+            }
+          }
+        ],
+        "safety": {
+          "staleDataMode": "block",
+          "maxAgeSeconds": 600,
+          "requireFreshTrigger": true,
+          "dryRunFirst": false
+        },
+        "failure": {
+          "strategy": "follow_edges",
+          "fallbackBehaviorId": "",
+          "conditionTree": {
+            "op": "and",
+            "children": []
+          }
+        },
+        "stop": {
+          "never": true
+        },
+        "override": {
+          "mode": "continue"
+        }
+      },
+      "ui": {
+        "accent": "air_quality",
+        "icon": "wind"
+      },
+      "metadata": {
+        "recommended": true,
+        "difficulty": "easy"
+      }
+    }
+  ],
+  "behaviorSchemaVersion": "integration.behaviors.v2"
 }

@@ -3,21 +3,19 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from piphi_runtime_kit_python import rehydrate_runtime_configs, runtime_lifespan
+from piphi_runtime_kit_python import runtime_lifespan
 
 from . import runtime as runtime_module
 
 CORE_REQUEST_TIMEOUT_SECONDS = 10.0
 
 
-async def startup_sync(runtime_context, core_http_client) -> None:
-    result = await rehydrate_runtime_configs(
-        runtime_context=runtime_context,
+async def startup_sync(_runtime_context, core_http_client) -> None:
+    result = await runtime_module.starter.rehydrate_configs(
         client=core_http_client,
         apply_snapshot=runtime_module.apply_runtime_config_snapshot,
         config_model=runtime_module.AirthingsCloudConfig,
         snapshot_model=runtime_module.RuntimeConfigSnapshot,
-        core_base_url=runtime_module.starter.core_base_url,
         timeout_seconds=CORE_REQUEST_TIMEOUT_SECONDS,
     )
 
