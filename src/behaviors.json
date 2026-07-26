@@ -174,6 +174,9 @@
           },
           "ui": {
             "group": "do_this"
+          },
+          "safety": {
+            "riskLevel": "low"
           }
         }
       ],
@@ -354,5 +357,53 @@
       }
     }
   ],
-  "behaviorSchemaVersion": "integration.behaviors.v2"
+  "behaviorSchemaVersion": "integration.behaviors.v2",
+  "telemetry": {
+    "capabilityMappings": [
+      {
+        "nativeMetric": "battery_percent",
+        "capability": "sensor.battery_percent"
+      },
+      {
+        "nativeMetric": "co2_ppm",
+        "capability": "sensor.co2_ppm"
+      },
+      {
+        "nativeMetric": "humidity_percent",
+        "capability": "sensor.humidity_percent"
+      },
+      {
+        "nativeMetric": "mold_risk_level",
+        "capability": "sensor.mold_risk_level"
+      },
+      {
+        "nativeMetric": "pm1_ugm3",
+        "capability": "sensor.pm1_ugm3"
+      },
+      {
+        "nativeMetric": "pm25_ugm3",
+        "capability": "sensor.pm25_ugm3"
+      },
+      {
+        "nativeMetric": "pressure_hpa",
+        "capability": "sensor.pressure_hpa"
+      },
+      {
+        "nativeMetric": "radon_long_term_bqm3",
+        "capability": "sensor.radon_long_term_bqm3"
+      },
+      {
+        "nativeMetric": "radon_short_term_bqm3",
+        "capability": "sensor.radon_short_term_bqm3"
+      },
+      {
+        "nativeMetric": "temperature_c",
+        "capability": "sensor.temperature_c"
+      },
+      {
+        "nativeMetric": "voc_ppb",
+        "capability": "sensor.voc_ppb"
+      }
+    ]
+  }
 }
