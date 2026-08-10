@@ -245,6 +245,12 @@
       }
     }
   },
+  "commands": {
+    "refresh": {
+      "description": "Fetch and store a fresh reading from the Airthings Consumer Cloud API.",
+      "timeout_ms": 15000
+    }
+  },
   "entities": [
     {
       "id": "airthings_cloud_monitor",
