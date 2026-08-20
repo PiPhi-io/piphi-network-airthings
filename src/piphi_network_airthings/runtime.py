@@ -3,13 +3,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from piphi_runtime_kit_python import (
+    AutomationActionRequest,
+    AutomationActionResult,
+    AutomationRegistry,
     IntegrationCommandRequest,
     IntegrationDiscoveryRequest,
     IntegrationDiscoveryResponse,
@@ -21,6 +26,7 @@ from piphi_runtime_kit_python import (
     RuntimeConfigSyncResponse,
     RuntimeDiagnosticsResponse,
     RuntimeHealthResponse,
+    SQLiteAutomationIdempotencyStore,
     build_config_apply_response,
     build_config_remove_response,
     build_discovery_response,
@@ -33,7 +39,10 @@ from piphi_runtime_kit_python import (
     schedule_telemetry_delivery,
     validate_typed_configs,
 )
-from piphi_runtime_kit_python.fastapi import sync_runtime_auth_from_fastapi_payload
+from piphi_runtime_kit_python.fastapi import (
+    dispatch_automation_action_from_fastapi,
+    sync_runtime_auth_from_fastapi_payload,
+)
 from piphi_runtime_kit_python.runtime.errors import CoreDeliveryError
 
 from .cloud.client import (
@@ -75,8 +84,46 @@ event_client = starter.event_client
 config_sync = starter.config_sync
 cloud_client = AirthingsCloudClient()
 router = APIRouter()
+_automation_ledger_path = Path(
+    os.getenv(
+        "PIPHI_AUTOMATION_LEDGER_PATH",
+        "/.piphinetwork/automation-actions.sqlite3",
+    )
+)
+automation_registry = AutomationRegistry(
+    idempotency_store=SQLiteAutomationIdempotencyStore(_automation_ledger_path)
+)
 poll_tasks: dict[str, asyncio.Task[Any]] = {}
 poll_status: dict[str, dict[str, Any]] = {}
+
+
+async def _refresh_registered_device(
+    action_request: AutomationActionRequest,
+) -> AutomationActionResult:
+    config_id = str(action_request.config_id or "").strip()
+    try:
+        sample = await _read_and_store(config_id)
+    except AirthingsCloudError as exc:
+        try:
+            _raise_http_for_cloud_error(exc)
+        except HTTPException as http_exc:
+            return AutomationActionResult.failure(
+                str(http_exc.detail),
+                retryable=http_exc.status_code >= 500 or http_exc.status_code == 429,
+                metadata={"status_code": http_exc.status_code},
+            )
+        return AutomationActionResult.failure(str(exc), metadata={"status_code": 500})
+    return AutomationActionResult.success(
+        {
+            "status": "ok",
+            "config_id": config_id,
+            "sampled_at": sample.recorded_at,
+            "state": registry.state_snapshots.get(config_id, {}).get("state"),
+        }
+    )
+
+
+automation_registry.action("refresh")(_refresh_registered_device)
 
 
 class AirthingsCloudConfig(RuntimeConfig):
@@ -1012,19 +1059,23 @@ async def command(payload: IntegrationCommandRequest, request: Request) -> dict[
         raise HTTPException(status_code=400, detail="Command must include config_id, entity_id, or device_id.")
     if payload.command != "refresh":
         raise HTTPException(status_code=400, detail=f"Unsupported command: {payload.command}")
-    try:
-        sample = await _read_and_store(config_id)
-    except AirthingsCloudError as exc:
-        _raise_http_for_cloud_error(exc)
+    result = await dispatch_automation_action_from_fastapi(
+        automation_registry,
+        request,
+        {
+            **payload.model_dump(mode="python"),
+            "config_id": config_id,
+        },
+    )
+    if not result.ok:
+        raise HTTPException(
+            status_code=int(result.metadata.get("status_code") or 503),
+            detail=result.error,
+        )
     logger.info(
         "airthings_command_completed command=%s config_id=%s sampled_at=%s",
         payload.command,
         config_id,
-        sample.recorded_at,
+        result.result.get("sampled_at"),
     )
-    return {
-        "status": "ok",
-        "config_id": config_id,
-        "sampled_at": sample.recorded_at,
-        "state": registry.state_snapshots.get(config_id, {}).get("state"),
-    }
+    return {**result.result, "replayed": result.replayed}

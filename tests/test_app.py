@@ -129,9 +129,18 @@ async def test_config_sync_configures_and_refreshes_multiple_devices(async_clien
 
     entities_response = await async_client.get("/entities")
     state_response = await async_client.get("/state")
+    idempotency_headers = {
+        "X-PiPhi-Idempotency-Key": "airthings-refresh-idempotency-1"
+    }
     refresh_response = await async_client.post(
         "/command",
         json={"command": "refresh", "entity_id": "device:cfg-1"},
+        headers=idempotency_headers,
+    )
+    replay_response = await async_client.post(
+        "/command",
+        json={"command": "refresh", "entity_id": "device:cfg-1"},
+        headers=idempotency_headers,
     )
 
     entities_payload = entities_response.json()
@@ -141,6 +150,10 @@ async def test_config_sync_configures_and_refreshes_multiple_devices(async_clien
     assert state_payload["state"]["cfg-1"]["state"]["co2_ppm"] == 812.0
     assert state_payload["state"]["cfg-2"]["state"]["radon_short_term_bqm3"] == 72.0
     assert refresh_response.status_code == 200
+    assert replay_response.status_code == 200
+    assert refresh_response.json()["replayed"] is False
+    assert replay_response.json()["replayed"] is True
+    assert fake_cloud_client.latest_sample_calls.count("2930046980") == 2
     assert refresh_response.json()["state"]["temperature_c"] == 21.4
 
 
