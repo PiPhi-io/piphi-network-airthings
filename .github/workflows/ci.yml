@@ -45,3 +45,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: pytest
+
+      - name: Build container image
+        working-directory: current
+        run: docker build --tag piphi-network-airthings:ci .
