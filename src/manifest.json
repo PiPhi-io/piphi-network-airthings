@@ -2,7 +2,7 @@
   "manifest_version": "1.0",
   "id": "airthings-consumer-cloud-api",
   "name": "Airthings (Consumer Cloud)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cloud integration for Airthings consumer accounts using the official Airthings Consumer API.",
   "maintainer": {
     "name": "PiPhi Network",
@@ -18,7 +18,7 @@
     "linux": {
       "type": "container",
       "container": {
-        "image": "piphinetwork/airthings-consumer-cloud:0.1.0",
+        "image": "piphinetwork/airthings-consumer-cloud:0.1.1",
         "ports": [
           {
             "container": 3669,
@@ -153,7 +153,11 @@
       "kind": "sensor",
       "unit": "Bq/m3",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
@@ -161,15 +165,24 @@
       "kind": "sensor",
       "unit": "Bq/m3",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
     "temperature_c": {
       "kind": "sensor",
-      "unit": "°C",
+      "unit": "\u00b0C",
       "dashboard": {
-        "allowed_widgets": ["sensor-card", "stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "sensor-card",
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "sensor-card"
       }
     },
@@ -177,7 +190,12 @@
       "kind": "sensor",
       "unit": "%",
       "dashboard": {
-        "allowed_widgets": ["sensor-card", "stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "sensor-card",
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "sensor-card"
       }
     },
@@ -185,7 +203,11 @@
       "kind": "sensor",
       "unit": "score",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
@@ -193,7 +215,11 @@
       "kind": "sensor",
       "unit": "hPa",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
@@ -201,7 +227,11 @@
       "kind": "sensor",
       "unit": "ppm",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
@@ -209,23 +239,35 @@
       "kind": "sensor",
       "unit": "ppb",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
     "pm1_ugm3": {
       "kind": "sensor",
-      "unit": "µg/m3",
+      "unit": "\u00b5g/m3",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
     "pm25_ugm3": {
       "kind": "sensor",
-      "unit": "µg/m3",
+      "unit": "\u00b5g/m3",
       "dashboard": {
-        "allowed_widgets": ["stat", "line-chart", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "line-chart",
+          "gauge"
+        ],
         "default_widget": "stat"
       }
     },
@@ -233,14 +275,19 @@
       "kind": "sensor",
       "unit": "%",
       "dashboard": {
-        "allowed_widgets": ["stat", "gauge"],
+        "allowed_widgets": [
+          "stat",
+          "gauge"
+        ],
         "default_widget": "gauge"
       }
     },
     "refresh": {
       "kind": "action",
       "dashboard": {
-        "allowed_widgets": ["button"],
+        "allowed_widgets": [
+          "button"
+        ],
         "default_widget": "button"
       }
     }
