@@ -45,4 +45,4 @@ jobs:
           dist/*
           --verify-tag
           --generate-notes
-          --title "Airthings Air Quality 0.1.0"
+          --title "Airthings Air Quality ${GITHUB_REF_NAME#experience-air-quality-v}"

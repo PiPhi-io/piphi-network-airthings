@@ -39,3 +39,11 @@ def test_air_quality_experience_matches_integration_capabilities() -> None:
         for capability in slot["capability_requirements"]
     }
     assert required <= set(manifest["capabilities"])
+    slots = {
+        slot["id"]: slot
+        for slot in package["widgets"][0]["binding_slots"]
+    }
+    assert slots["temperature"]["required"] is True
+    assert slots["humidity"]["required"] is False
+    assert slots["radon"]["required"] is False
+    assert slots["co2"]["required"] is False
