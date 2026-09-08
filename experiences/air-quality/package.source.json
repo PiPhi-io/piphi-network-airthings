@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "identity": {
+    "publisher_id": "io.piphi",
+    "package_id": "airthings-air-quality",
+    "version": "0.1.0"
+  },
+  "name": "Airthings Air Quality",
+  "description": "A focused overview of the Airthings readings that matter most at a glance.",
+  "origin": "integration",
+  "owning_integration_id": "airthings-consumer-cloud-api",
+  "sdk_version_range": ">=0.5,<0.6",
+  "requires_integrations": [
+    {
+      "integration_id": "airthings-consumer-cloud-api",
+      "version_range": ">=0.1,<1",
+      "optional": false
+    }
+  ],
+  "recommended_for_integrations": ["airthings-consumer-cloud-api"],
+  "widgets": [
+    {
+      "id": "air-quality-overview",
+      "name": "Airthings Air Quality Overview",
+      "description": "Temperature, humidity, radon, and carbon dioxide from one Airthings monitor.",
+      "runtime": "declarative",
+      "binding_slots": [
+        {"id": "temperature", "label": "Temperature", "binding_modes": ["read"], "capability_requirements": ["temperature_c"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
+        {"id": "humidity", "label": "Humidity", "binding_modes": ["read"], "capability_requirements": ["humidity_percent"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
+        {"id": "radon", "label": "Radon", "binding_modes": ["read"], "capability_requirements": ["radon_short_term_bqm3"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
+        {"id": "co2", "label": "Carbon dioxide", "binding_modes": ["read"], "capability_requirements": ["co2_ppm"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]}
+      ],
+      "recipe": {
+        "schema_version": "1",
+        "layout": "grid",
+        "columns": 2,
+        "items": [
+          {"type": "metric", "slot_id": "temperature", "label": "Temperature", "format": "temperature"},
+          {"type": "metric", "slot_id": "humidity", "label": "Humidity", "format": "percent"},
+          {"type": "metric", "slot_id": "radon", "label": "Radon"},
+          {"type": "metric", "slot_id": "co2", "label": "CO₂"}
+        ]
+      },
+      "default_column_span": 4,
+      "default_row_span": 3
+    }
+  ]
+}

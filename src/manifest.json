@@ -148,6 +148,15 @@
       "serial_number"
     ]
   },
+  "ui": {
+    "experience_packages": [
+      {
+        "registry_id": "io.piphi.airthings-air-quality",
+        "version_range": ">=0.1,<1",
+        "auto_install": true
+      }
+    ]
+  },
   "capabilities": {
     "radon_short_term_bqm3": {
       "kind": "sensor",
