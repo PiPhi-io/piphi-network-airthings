@@ -2,7 +2,7 @@
   "manifest_version": "1.0",
   "id": "airthings-consumer-cloud-api",
   "name": "Airthings (Consumer Cloud)",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Cloud integration for Airthings consumer accounts using the official Airthings Consumer API.",
   "maintainer": {
     "name": "PiPhi Network",
@@ -18,7 +18,7 @@
     "linux": {
       "type": "container",
       "container": {
-        "image": "piphinetwork/airthings-consumer-cloud:0.1.2",
+        "image": "piphinetwork/airthings-consumer-cloud:0.1.3",
         "ports": [
           {
             "container": 3669,
