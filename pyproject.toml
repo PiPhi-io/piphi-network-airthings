@@ -1,6 +1,6 @@
 [project]
 name = "piphi-network-airthings"
-version = "0.1.4"
+version = "0.1.5"
 description = "Default template for PDM package"
 authors = [
     {name = "PiPhi Network", email = "support@piphi.io"},
