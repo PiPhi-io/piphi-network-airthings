@@ -3,13 +3,13 @@
   "identity": {
     "publisher_id": "io.piphi",
     "package_id": "airthings-air-quality",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "name": "Airthings Air Quality",
   "description": "A focused overview of the Airthings readings that matter most at a glance.",
   "origin": "integration",
   "owning_integration_id": "airthings-consumer-cloud-api",
-  "sdk_version_range": ">=0.5,<0.6",
+  "sdk_version_range": ">=0.5.1,<0.6",
   "requires_integrations": [
     {
       "integration_id": "airthings-consumer-cloud-api",
@@ -24,6 +24,23 @@
       "name": "Airthings Air Quality Overview",
       "description": "Temperature, humidity, radon, and carbon dioxide from one Airthings monitor.",
       "runtime": "declarative",
+      "themes": [
+        {
+          "id": "airthings",
+          "name": "Airthings",
+          "description": "An airy blue and green presentation inspired by clean indoor air.",
+          "stylesheet": "themes/airthings.css",
+          "color_scheme": "auto"
+        },
+        {
+          "id": "quiet",
+          "name": "Quiet",
+          "description": "A restrained surface that blends into the rest of your dashboard.",
+          "stylesheet": "themes/quiet.css",
+          "color_scheme": "auto"
+        }
+      ],
+      "default_theme_id": "airthings",
       "binding_slots": [
         {"id": "temperature", "label": "Temperature", "required": true, "binding_modes": ["read"], "capability_requirements": ["temperature_c"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
         {"id": "humidity", "label": "Humidity", "required": false, "binding_modes": ["read"], "capability_requirements": ["humidity_percent"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
@@ -35,10 +52,10 @@
         "layout": "grid",
         "columns": 2,
         "items": [
-          {"type": "metric", "slot_id": "temperature", "label": "Temperature", "format": "temperature"},
-          {"type": "metric", "slot_id": "humidity", "label": "Humidity", "format": "percent"},
-          {"type": "metric", "slot_id": "radon", "label": "Radon"},
-          {"type": "metric", "slot_id": "co2", "label": "CO₂"}
+          {"type": "metric", "slot_id": "temperature", "label": "Temperature", "format": "temperature", "domain": "temperature", "emphasis": "hero", "action": {"type": "details", "label": "View temperature details"}},
+          {"type": "metric", "slot_id": "humidity", "label": "Humidity", "format": "percent", "domain": "humidity", "action": {"type": "details", "label": "View humidity details"}},
+          {"type": "metric", "slot_id": "radon", "label": "Radon", "domain": "air_quality", "action": {"type": "details", "label": "View radon details"}},
+          {"type": "metric", "slot_id": "co2", "label": "CO₂", "domain": "air_quality", "action": {"type": "details", "label": "View carbon dioxide details"}}
         ]
       },
       "default_column_span": 4,
