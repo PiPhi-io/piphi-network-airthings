@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime
 
 import pytest
+from fastapi import HTTPException
 
 from piphi_network_airthings.cloud.client import AirthingsCloudAuthError, AirthingsCloudRequestError
 import piphi_network_airthings.runtime as runtime_module
@@ -236,6 +237,131 @@ async def test_unchanged_cloud_sample_keeps_measurement_time_and_sends_fresh_pol
     assert health["last_polled_at"] == status["last_polled_at"]
     assert health["last_core_heartbeat_at"] == status["last_core_heartbeat_at"]
     assert health["last_sample_recorded_at"] == sampled_at
+
+
+@pytest.mark.asyncio
+async def test_reapplying_config_preserves_measurement_deduplication(
+    async_client,
+    fake_cloud_client,
+    monkeypatch,
+) -> None:
+    sampled_at = "2026-09-09T18:19:38+00:00"
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Office",
+            "type": "WAVE_MINI",
+            "sensors": ["temp"],
+        }
+    }
+    fake_cloud_client.samples["2930046980"] = {
+        "data": {"recorded": sampled_at, "temp": 24.4}
+    }
+    deliveries: list[dict] = []
+
+    def capture_delivery(**kwargs):
+        deliveries.append(kwargs)
+        task = asyncio.get_running_loop().create_future()
+        task.set_result(True)
+        return task
+
+    monkeypatch.setattr(runtime_module, "schedule_telemetry_delivery", capture_delivery)
+    config_payload = {
+        "id": "cfg-office",
+        "client_id": "client-1",
+        "client_secret": "secret-1",
+        "serial_number": "2930046980",
+        "poll_interval_seconds": 300,
+    }
+
+    assert (await async_client.post("/config", json=config_payload)).status_code == 200
+    await asyncio.sleep(0)
+    assert (await async_client.post("/config", json=config_payload)).status_code == 200
+    await asyncio.sleep(0)
+
+    measurement_deliveries = [
+        delivery for delivery in deliveries
+        if "temperature_c" in delivery["metrics"]
+    ]
+    assert len(measurement_deliveries) == 1
+    assert runtime_module.registry.get("cfg-office")["last_delivered_sample_at"] == sampled_at
+
+
+@pytest.mark.asyncio
+async def test_new_config_for_same_device_removes_obsolete_runtime_config(
+    async_client,
+    fake_cloud_client,
+) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Office",
+            "type": "WAVE_MINI",
+            "sensors": ["temp"],
+        }
+    }
+    fake_cloud_client.samples["2930046980"] = {
+        "data": {"recorded": "2026-09-09T18:19:38+00:00", "temp": 24.4}
+    }
+    common_payload = {
+        "client_id": "client-1",
+        "client_secret": "secret-1",
+        "serial_number": "2930046980",
+        "poll_interval_seconds": 300,
+    }
+
+    assert (
+        await async_client.post("/config", json={"id": "cfg-old", **common_payload})
+    ).status_code == 200
+    assert (
+        await async_client.post("/config", json={"id": "cfg-current", **common_payload})
+    ).status_code == 200
+
+    diagnostics = (await async_client.get("/diagnostics")).json()["diagnostics"]
+    assert diagnostics["active_config_ids"] == ["cfg-current"]
+    assert diagnostics["poll_task_ids"] == ["cfg-current"]
+    assert "cfg-old" not in diagnostics["poll_status"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_replacement_keeps_existing_device_config(
+    async_client,
+    fake_cloud_client,
+    monkeypatch,
+) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Office",
+            "type": "WAVE_MINI",
+            "sensors": ["temp"],
+        }
+    }
+    fake_cloud_client.samples["2930046980"] = {
+        "data": {"recorded": "2026-09-09T18:19:38+00:00", "temp": 24.4}
+    }
+    common_payload = {
+        "client_id": "client-1",
+        "client_secret": "secret-1",
+        "serial_number": "2930046980",
+        "poll_interval_seconds": 300,
+    }
+    assert (
+        await async_client.post("/config", json={"id": "cfg-working", **common_payload})
+    ).status_code == 200
+
+    async def reject_replacement(_config):
+        raise HTTPException(status_code=401, detail="credentials rejected")
+
+    monkeypatch.setattr(runtime_module, "_ensure_known_device", reject_replacement)
+    response = await async_client.post(
+        "/config",
+        json={"id": "cfg-replacement", **common_payload},
+    )
+
+    assert response.status_code == 401
+    assert runtime_module.registry.ids() == ["cfg-working"]
+    assert sorted(runtime_module.poll_tasks) == ["cfg-working"]
 
 
 @pytest.mark.asyncio

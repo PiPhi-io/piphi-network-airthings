@@ -739,8 +739,29 @@ async def _ensure_known_device(config: AirthingsCloudConfig) -> AirthingsCloudDe
 async def apply_config(config: AirthingsCloudConfig) -> dict[str, Any]:
     config_id = _config_id(config)
     logger.info("airthings_config_apply_started %s", _config_log_label(config))
-    await remove_config(config_id)
     device = await _ensure_known_device(config)
+    previous_entry = registry.get(config_id)
+    previous_sample_at = (
+        previous_entry.get("last_delivered_sample_at")
+        if previous_entry is not None
+        and str(previous_entry.get("serial_number")) == str(config.serial_number)
+        else None
+    )
+    duplicate_device_config_ids = [
+        active_config_id
+        for active_config_id, active_entry in list(registry.entries.items())
+        if active_config_id != config_id
+        and str(active_entry.get("serial_number")) == str(config.serial_number)
+    ]
+    for duplicate_config_id in duplicate_device_config_ids:
+        logger.info(
+            "airthings_config_replaced duplicate_config_id=%s serial_number=%s replacement_config_id=%s",
+            duplicate_config_id,
+            config.serial_number,
+            config_id,
+        )
+        await remove_config(duplicate_config_id)
+    await remove_config(config_id)
     entry = {
         "config_id": config_id,
         "device_id": _device_id(config),
@@ -755,6 +776,8 @@ async def apply_config(config: AirthingsCloudConfig) -> dict[str, Any]:
         "config": config.model_dump(),
         "known_sensors": list(device.sensors),
     }
+    if previous_sample_at:
+        entry["last_delivered_sample_at"] = previous_sample_at
     registry.set(config_id, entry)
     registry.update_state(
         config_id,
