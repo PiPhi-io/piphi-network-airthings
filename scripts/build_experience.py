@@ -35,6 +35,8 @@ def _normalized(source: dict) -> dict:
     for widget in payload["widgets"]:
         widget.setdefault("description", None)
         widget.setdefault("entry", None)
+        widget.setdefault("themes", [])
+        widget.setdefault("default_theme_id", None)
         widget.setdefault("binding_slots", [])
         widget.setdefault("permissions", [])
         widget.setdefault("settings", [])
@@ -49,6 +51,10 @@ def _normalized(source: dict) -> dict:
             slot.setdefault("value_kinds", [])
             slot.setdefault("capability_requirements", [])
             slot.setdefault("compatible_integration_ids", [])
+            slot.setdefault(
+                "data_delivery",
+                {"mode": "stream_preferred", "stale_after_seconds": None},
+            )
         recipe = widget.get("recipe")
         if recipe:
             recipe.setdefault("schema_version", "1")
@@ -58,17 +64,24 @@ def _normalized(source: dict) -> dict:
                 if item["type"] == "metric":
                     item.setdefault("label", None)
                     item.setdefault("format", "auto")
+                    item.setdefault("domain", "generic")
+                    item.setdefault("emphasis", "normal")
                     item.setdefault("show_freshness", True)
+                    item.setdefault("action", None)
                 elif item["type"] == "status":
                     item.setdefault("label", None)
                     item.setdefault("true_label", "On")
                     item.setdefault("false_label", "Off")
+                    item.setdefault("domain", "generic")
                     item.setdefault("show_freshness", False)
+                    item.setdefault("action", None)
                 elif item["type"] == "progress":
                     item.setdefault("label", None)
                     item.setdefault("minimum", 0)
                     item.setdefault("maximum", 100)
+                    item.setdefault("domain", "generic")
                     item.setdefault("show_value", True)
+                    item.setdefault("action", None)
                 elif item["type"] == "text":
                     item.setdefault("text", None)
                     item.setdefault("setting_id", None)
@@ -84,6 +97,14 @@ def _archive(source: dict) -> bytes:
     info.external_attr = 0o644 << 16
     with ZipFile(output, "w") as package:
         package.writestr(info, payload)
+        for widget in source["widgets"]:
+            for theme in widget.get("themes", []):
+                stylesheet = theme["stylesheet"]
+                theme_path = ROOT / "experiences" / "air-quality" / stylesheet
+                theme_info = ZipInfo(stylesheet, date_time=(2026, 1, 1, 0, 0, 0))
+                theme_info.compress_type = ZIP_DEFLATED
+                theme_info.external_attr = 0o644 << 16
+                package.writestr(theme_info, theme_path.read_bytes())
     return output.getvalue()
 
 
@@ -98,7 +119,7 @@ def _private_key(check: bool, env_name: str) -> Ed25519PrivateKey:
             base64.b64decode(encoded, validate=True), password=None
         )
         if not isinstance(loaded, Ed25519PrivateKey):
-            raise ValueError("key is not Ed25519")
+            raise TypeError("key is not Ed25519")
         return loaded
     except (TypeError, ValueError) as exc:
         raise SystemExit(f"{env_name} is not a valid Ed25519 private key") from exc

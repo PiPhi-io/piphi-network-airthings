@@ -1,0 +1,13 @@
+:root {
+  --piphi-experience-accent: #0ea5a4;
+  --piphi-experience-surface: linear-gradient(145deg, color-mix(in srgb, #0ea5e9 11%, transparent), color-mix(in srgb, #10b981 8%, transparent));
+  --piphi-experience-tile-surface: color-mix(in srgb, currentColor 5%, transparent);
+  --piphi-experience-tile-border: color-mix(in srgb, #38bdf8 24%, transparent);
+  --piphi-experience-shadow: 0 16px 38px rgba(14, 165, 164, 0.08);
+  --piphi-experience-tile-shadow: 0 8px 20px rgba(14, 165, 164, 0.07);
+  --piphi-experience-radius: 18px;
+  --piphi-experience-gap: 10px;
+  --piphi-experience-temperature-accent: #fb923c;
+  --piphi-experience-humidity-accent: #38bdf8;
+  --piphi-experience-air-quality-accent: #34d399;
+}

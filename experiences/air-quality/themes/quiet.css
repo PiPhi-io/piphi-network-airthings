@@ -1,0 +1,13 @@
+:root {
+  --piphi-experience-accent: #64748b;
+  --piphi-experience-surface: color-mix(in srgb, currentColor 2%, transparent);
+  --piphi-experience-tile-surface: color-mix(in srgb, currentColor 4%, transparent);
+  --piphi-experience-tile-border: color-mix(in srgb, currentColor 10%, transparent);
+  --piphi-experience-shadow: none;
+  --piphi-experience-tile-shadow: none;
+  --piphi-experience-radius: 14px;
+  --piphi-experience-gap: 8px;
+  --piphi-experience-temperature-accent: #f97316;
+  --piphi-experience-humidity-accent: #0ea5e9;
+  --piphi-experience-air-quality-accent: #10b981;
+}
