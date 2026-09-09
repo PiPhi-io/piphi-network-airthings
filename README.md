@@ -9,6 +9,9 @@ This integration targets consumer Airthings accounts and polls the latest cloud 
 - Discovers devices from an Airthings consumer account
 - Configures one PiPhi runtime entity per Airthings serial number
 - Polls `latest-samples` on a configurable interval
+- Reports a fresh Core health heartbeat on every successful poll while preserving
+  the Airthings device timestamp on measurement telemetry. Repeated cloud samples
+  therefore prove the connection is healthy without making old readings look new.
 - Emits telemetry and runtime events on success and failure
 - Supports refresh commands, config sync, diagnostics, and health endpoints through the PiPhi Python runtime SDK
 

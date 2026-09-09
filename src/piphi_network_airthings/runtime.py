@@ -427,6 +427,68 @@ def _update_poll_status(config_id: str, **updates: Any) -> None:
     poll_status[config_id] = current
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(tz=UTC).isoformat()
+
+
+def _record_heartbeat_delivery(
+    config_id: str,
+    task: asyncio.Future[bool],
+) -> None:
+    try:
+        delivered = task.result()
+    except Exception as exc:
+        _update_poll_status(config_id, last_core_delivery_error=str(exc))
+        return
+    if delivered:
+        _update_poll_status(
+            config_id,
+            last_core_heartbeat_at=_utc_now_iso(),
+            last_core_delivery_error=None,
+        )
+    else:
+        _update_poll_status(config_id, last_core_delivery_error="delivery_failed")
+
+
+def _record_measurement_delivery(
+    entry: dict[str, Any],
+    sample_recorded_at: str,
+    task: asyncio.Future[bool],
+) -> None:
+    if entry.get("pending_sample_at") == sample_recorded_at:
+        entry.pop("pending_sample_at", None)
+    try:
+        delivered = task.result()
+    except Exception:
+        return
+    if delivered:
+        entry["last_delivered_sample_at"] = sample_recorded_at
+
+
+def _latest_poll_metadata() -> dict[str, str | None]:
+    statuses = list(poll_status.values())
+    last_polled_values = sorted(
+        str(status["last_polled_at"])
+        for status in statuses
+        if status.get("last_polled_at")
+    )
+    heartbeat_values = sorted(
+        str(status["last_core_heartbeat_at"])
+        for status in statuses
+        if status.get("last_core_heartbeat_at")
+    )
+    sample_values = sorted(
+        str(status["last_sample_recorded_at"])
+        for status in statuses
+        if status.get("last_sample_recorded_at")
+    )
+    return {
+        "last_polled_at": last_polled_values[-1] if last_polled_values else None,
+        "last_core_heartbeat_at": heartbeat_values[-1] if heartbeat_values else None,
+        "last_sample_recorded_at": sample_values[-1] if sample_values else None,
+    }
+
+
 async def _fetch_latest_sample(entry: dict[str, Any]) -> tuple[AirthingsCloudDevice | None, AirthingsLatestSample]:
     sample = await cloud_client.latest_sample(
         credentials=_entry_credentials(entry),
@@ -440,6 +502,7 @@ def _update_state_snapshot(
     config_id: str,
     entry: dict[str, Any],
     sample: AirthingsLatestSample,
+    polled_at: str,
 ) -> None:
     derived_metrics = dict(sample.metrics)
     derived_units = dict(sample.units)
@@ -459,14 +522,11 @@ def _update_state_snapshot(
             "serial_number": entry["serial_number"],
             "device_model": entry.get("device_model"),
             "name": _entry_name(entry),
+            "last_polled_at": polled_at,
             "last_error": None,
         },
     )
-    metrics = {
-        **derived_metrics,
-        "connected": True,
-        "read_failed": False,
-    }
+    metrics = dict(derived_metrics)
     filtered_metrics, filtered_units, dropped_metrics = _filtered_telemetry_payload(
         metrics=metrics,
         units=derived_units,
@@ -479,24 +539,69 @@ def _update_state_snapshot(
             sorted(filtered_metrics.keys()),
             dropped_metrics,
         )
-    schedule_telemetry_delivery(
+    sample_is_pending = entry.get("pending_sample_at") == sample.recorded_at
+    sample_was_delivered = entry.get("last_delivered_sample_at") == sample.recorded_at
+    if not sample_was_delivered and not sample_is_pending:
+        entry["pending_sample_at"] = sample.recorded_at
+        measurement_task = schedule_telemetry_delivery(
+            process_state=runtime.process_state,
+            telemetry_client=telemetry_client,
+            auth_context=runtime.auth,
+            config_id=str(entry["config_id"]),
+            device_id=str(entry["serial_number"]),
+            metrics=filtered_metrics,
+            container_id=entry.get("container_id"),
+            units=filtered_units,
+            timestamp=sample.recorded_at,
+            on_error=_handle_telemetry_delivery_error,
+            on_skipped=_handle_telemetry_delivery_skipped,
+        )
+        measurement_task.add_done_callback(
+            lambda task: _record_measurement_delivery(
+                entry,
+                sample.recorded_at,
+                task,
+            )
+        )
+        logger.info(
+            "airthings_sample_delivery_scheduled %s sampled_at=%s metric_count=%s",
+            _entry_log_label(entry),
+            sample.recorded_at,
+            len(filtered_metrics),
+        )
+    elif sample_was_delivered:
+        logger.info(
+            "airthings_sample_unchanged %s sampled_at=%s",
+            _entry_log_label(entry),
+            sample.recorded_at,
+        )
+    else:
+        logger.info(
+            "airthings_sample_delivery_pending %s sampled_at=%s",
+            _entry_log_label(entry),
+            sample.recorded_at,
+        )
+
+    heartbeat_task = schedule_telemetry_delivery(
         process_state=runtime.process_state,
         telemetry_client=telemetry_client,
         auth_context=runtime.auth,
         config_id=str(entry["config_id"]),
         device_id=str(entry["serial_number"]),
-        metrics=filtered_metrics,
+        metrics={"connected": True, "read_failed": False},
         container_id=entry.get("container_id"),
-        units=filtered_units,
-        timestamp=sample.recorded_at,
+        timestamp=polled_at,
         on_error=_handle_telemetry_delivery_error,
         on_skipped=_handle_telemetry_delivery_skipped,
     )
+    heartbeat_task.add_done_callback(
+        lambda task: _record_heartbeat_delivery(config_id, task)
+    )
     logger.info(
-        "airthings_sample_delivery_scheduled %s sampled_at=%s metric_count=%s",
+        "airthings_poll_heartbeat_scheduled %s polled_at=%s sampled_at=%s",
         _entry_log_label(entry),
+        polled_at,
         sample.recorded_at,
-        len(filtered_metrics),
     )
 
 
@@ -505,21 +610,39 @@ async def _read_and_store(config_id: str) -> AirthingsLatestSample:
     if entry is None:
         raise HTTPException(status_code=404, detail=f"unknown config_id={config_id}")
     logger.info("Polling Airthings cloud latest sample for %s", _entry_log_label(entry))
-    _update_poll_status(config_id, last_poll_started=asyncio.get_running_loop().time())
+    attempted_at = _utc_now_iso()
+    _update_poll_status(
+        config_id,
+        last_poll_started=asyncio.get_running_loop().time(),
+        last_poll_attempted_at=attempted_at,
+    )
     try:
         _device, sample = await _fetch_latest_sample(entry)
     except AirthingsCloudError as exc:
-        _update_poll_status(config_id, last_poll_error=str(exc))
+        _update_poll_status(
+            config_id,
+            last_poll_failed_at=_utc_now_iso(),
+            last_poll_error=str(exc),
+        )
         raise
-    _update_state_snapshot(config_id=config_id, entry=entry, sample=sample)
+    polled_at = _utc_now_iso()
+    _update_state_snapshot(
+        config_id=config_id,
+        entry=entry,
+        sample=sample,
+        polled_at=polled_at,
+    )
     _update_poll_status(
         config_id,
-        last_poll_succeeded=sample.recorded_at,
+        last_poll_succeeded=polled_at,
+        last_polled_at=polled_at,
+        last_sample_recorded_at=sample.recorded_at,
         last_poll_error=None,
     )
     logger.info(
-        "airthings_sample_stored %s sampled_at=%s metric_count=%s",
+        "airthings_sample_stored %s polled_at=%s sampled_at=%s metric_count=%s",
         _entry_log_label(entry),
+        polled_at,
         sample.recorded_at,
         len([value for value in sample.metrics.values() if value is not None]),
     )
@@ -850,6 +973,7 @@ async def health() -> RuntimeHealthResponse:
         metadata={
             "active_configs": len(registry.ids()),
             "poll_task_count": len(poll_tasks),
+            **_latest_poll_metadata(),
         }
     )
 

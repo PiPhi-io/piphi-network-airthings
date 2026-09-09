@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
+
 import pytest
 
 from piphi_network_airthings.cloud.client import AirthingsCloudAuthError, AirthingsCloudRequestError
+import piphi_network_airthings.runtime as runtime_module
 
 
 @pytest.mark.asyncio
@@ -155,6 +159,144 @@ async def test_config_sync_configures_and_refreshes_multiple_devices(async_clien
     assert replay_response.json()["replayed"] is True
     assert fake_cloud_client.latest_sample_calls.count("2930046980") == 2
     assert refresh_response.json()["state"]["temperature_c"] == 21.4
+
+
+@pytest.mark.asyncio
+async def test_unchanged_cloud_sample_keeps_measurement_time_and_sends_fresh_poll_heartbeat(
+    async_client,
+    fake_cloud_client,
+    monkeypatch,
+) -> None:
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["temp", "humidity"],
+        }
+    }
+    sampled_at = "2026-04-18T18:30:00+00:00"
+    fake_cloud_client.samples = {
+        "2930046980": {
+            "data": {
+                "recorded": sampled_at,
+                "temp": 21.4,
+                "humidity": 44,
+            }
+        }
+    }
+    deliveries: list[dict] = []
+
+    def capture_delivery(**kwargs):
+        deliveries.append(kwargs)
+        task = asyncio.get_running_loop().create_future()
+        task.set_result(True)
+        return task
+
+    monkeypatch.setattr(runtime_module, "schedule_telemetry_delivery", capture_delivery)
+
+    response = await async_client.post(
+        "/config",
+        json={
+            "id": "cfg-heartbeat",
+            "client_id": "client-1",
+            "client_secret": "secret-1",
+            "serial_number": "2930046980",
+            "poll_interval_seconds": 300,
+        },
+    )
+    assert response.status_code == 200
+    await runtime_module._read_and_store("cfg-heartbeat")
+    await asyncio.sleep(0)
+
+    measurement_deliveries = [
+        delivery for delivery in deliveries
+        if "temperature_c" in delivery["metrics"]
+    ]
+    heartbeat_deliveries = [
+        delivery for delivery in deliveries
+        if delivery["metrics"] == {"connected": True, "read_failed": False}
+    ]
+    assert len(measurement_deliveries) == 1
+    assert measurement_deliveries[0]["timestamp"] == sampled_at
+    assert len(heartbeat_deliveries) == 2
+    assert all(delivery["timestamp"] != sampled_at for delivery in heartbeat_deliveries)
+    assert all(datetime.fromisoformat(delivery["timestamp"]).tzinfo is not None for delivery in heartbeat_deliveries)
+
+    diagnostics = (await async_client.get("/diagnostics")).json()["diagnostics"]
+    status = diagnostics["poll_status"]["cfg-heartbeat"]
+    state = diagnostics["state_snapshots"]["cfg-heartbeat"]["state"]
+    assert status["last_polled_at"] == heartbeat_deliveries[-1]["timestamp"]
+    assert status["last_sample_recorded_at"] == sampled_at
+    assert state["last_polled_at"] == heartbeat_deliveries[-1]["timestamp"]
+    assert state["sampled_at"] == sampled_at
+    assert status["last_core_heartbeat_at"] >= heartbeat_deliveries[-1]["timestamp"]
+
+    health = (await async_client.get("/health")).json()["metadata"]
+    assert health["last_polled_at"] == status["last_polled_at"]
+    assert health["last_core_heartbeat_at"] == status["last_core_heartbeat_at"]
+    assert health["last_sample_recorded_at"] == sampled_at
+
+
+@pytest.mark.asyncio
+async def test_failed_measurement_delivery_is_retried_on_next_poll(
+    async_client,
+    fake_cloud_client,
+    monkeypatch,
+) -> None:
+    sampled_at = "2026-09-09T10:00:00+00:00"
+    fake_cloud_client.devices = {
+        "2930046980": {
+            "serialNumber": "2930046980",
+            "name": "Basement Wave Plus",
+            "type": "WAVE_PLUS",
+            "sensors": ["temp"],
+        }
+    }
+    fake_cloud_client.samples["2930046980"] = {
+        "data": {
+            "recorded": sampled_at,
+            "temp": 21.4,
+        }
+    }
+    deliveries: list[dict] = []
+    failed_first_measurement = False
+
+    def capture_delivery(**kwargs):
+        nonlocal failed_first_measurement
+        deliveries.append(kwargs)
+        task = asyncio.get_running_loop().create_future()
+        is_measurement = "temperature_c" in kwargs["metrics"]
+        if is_measurement and not failed_first_measurement:
+            failed_first_measurement = True
+            task.set_result(False)
+        else:
+            task.set_result(True)
+        return task
+
+    monkeypatch.setattr(runtime_module, "schedule_telemetry_delivery", capture_delivery)
+
+    response = await async_client.post(
+        "/config",
+        json={
+            "id": "cfg-retry",
+            "client_id": "client-1",
+            "client_secret": "secret-1",
+            "serial_number": "2930046980",
+            "poll_interval_seconds": 300,
+        },
+    )
+    assert response.status_code == 200
+    await asyncio.sleep(0)
+    await runtime_module._read_and_store("cfg-retry")
+    await asyncio.sleep(0)
+
+    measurement_deliveries = [
+        delivery for delivery in deliveries
+        if "temperature_c" in delivery["metrics"]
+    ]
+    assert len(measurement_deliveries) == 2
+    assert all(delivery["timestamp"] == sampled_at for delivery in measurement_deliveries)
 
 
 @pytest.mark.asyncio
