@@ -51,6 +51,20 @@ def test_air_quality_experience_matches_integration_capabilities() -> None:
     assert slots["radon"]["required"] is False
     assert slots["co2"]["required"] is False
     widget = package["widgets"][0]
+    assert widget["core_card_replacements"] == [
+        {
+            "schema_version": "1",
+            "id": "airthings-air-quality-v1",
+            "source_card_types": ["air-quality-card", "sensor-card", "stat"],
+            "source_capability_ids": [
+                "temperature_c",
+                "humidity_percent",
+                "radon_short_term_bqm3",
+                "co2_ppm",
+            ],
+            "strategy": "same-device",
+        }
+    ]
     assert widget["default_theme_id"] == "airthings"
     assert {theme["id"] for theme in widget["themes"]} == {"airthings", "quiet"}
     assert all(item["action"]["type"] == "details" for item in widget["recipe"]["items"])

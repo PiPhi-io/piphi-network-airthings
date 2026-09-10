@@ -3,7 +3,7 @@
   "identity": {
     "publisher_id": "io.piphi",
     "package_id": "airthings-air-quality",
-    "version": "0.1.2"
+    "version": "0.1.3"
   },
   "name": "Airthings Air Quality",
   "description": "A focused overview of the Airthings readings that matter most at a glance.",
@@ -41,6 +41,20 @@
         }
       ],
       "default_theme_id": "airthings",
+      "core_card_replacements": [
+        {
+          "schema_version": "1",
+          "id": "airthings-air-quality-v1",
+          "source_card_types": ["air-quality-card", "sensor-card", "stat"],
+          "source_capability_ids": [
+            "temperature_c",
+            "humidity_percent",
+            "radon_short_term_bqm3",
+            "co2_ppm"
+          ],
+          "strategy": "same-device"
+        }
+      ],
       "binding_slots": [
         {"id": "temperature", "label": "Temperature", "required": true, "binding_modes": ["read"], "capability_requirements": ["temperature_c"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
         {"id": "humidity", "label": "Humidity", "required": false, "binding_modes": ["read"], "capability_requirements": ["humidity_percent"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
