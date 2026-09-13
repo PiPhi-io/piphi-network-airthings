@@ -129,7 +129,7 @@ def build(output_dir: Path, *, check: bool, env_name: str, key_id: str) -> tuple
     source = _normalized(json.loads(SOURCE.read_text(encoding="utf-8")))
     release_ref = str(os.getenv("GITHUB_REF_NAME") or "").strip()
     expected_ref = f"experience-air-quality-v{source['identity']['version']}"
-    if release_ref and release_ref != expected_ref:
+    if not check and release_ref and release_ref != expected_ref:
         raise SystemExit(
             f"release ref {release_ref!r} does not match package version; expected {expected_ref!r}"
         )

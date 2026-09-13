@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
 
 def test_manifest_and_behaviors_align() -> None:
     root = Path(__file__).resolve().parent.parent / "src"
@@ -120,3 +122,20 @@ def test_air_quality_release_archive_contains_normalized_theme_contract() -> Non
             "themes/airthings.css",
             "themes/quiet.css",
         } <= set(package.namelist())
+
+
+def test_experience_check_build_is_branch_safe_but_release_build_requires_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "airthings_build_experience_release_ref", root / "scripts" / "build_experience.py"
+    )
+    assert spec is not None and spec.loader is not None
+    build_experience = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_experience)
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+
+    build_experience.build(tmp_path, check=True, env_name="unused", key_id="test-key")
+    with pytest.raises(SystemExit, match="does not match package version"):
+        build_experience.build(tmp_path, check=False, env_name="unused", key_id="test-key")
