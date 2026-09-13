@@ -15,6 +15,10 @@ This integration targets consumer Airthings accounts and polls the latest cloud 
 - Emits telemetry and runtime events on success and failure
 - Supports refresh commands, config sync, diagnostics, and health endpoints through the PiPhi Python runtime SDK
 
+The declared Consumer Cloud scope is implementation-complete and is enforced by
+`docs/capability-catalog.json`. Automated runtime and experience-package checks
+pass; validation against physical devices remains an explicit pre-GA gate.
+
 ## API assumptions
 
 The implementation is based on Airthings’ published consumer API onboarding plus the shared Airthings OAuth/device endpoint patterns:

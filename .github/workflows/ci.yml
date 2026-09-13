@@ -46,6 +46,10 @@ jobs:
           PYTHONPATH: src
         run: pytest
 
+      - name: Validate experience package
+        working-directory: current
+        run: python scripts/build_experience.py --check
+
       - name: Build container image
         working-directory: current
         run: docker build --tag piphi-network-airthings:ci .

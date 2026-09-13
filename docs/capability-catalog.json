@@ -1,0 +1,38 @@
+{
+  "schema_version": "1",
+  "integration_id": "airthings-consumer-cloud-api",
+  "catalog_version": "0.1.5",
+  "completion": {
+    "status": "implementation_complete",
+    "scope": "Airthings Consumer Cloud devices and readings declared by this integration",
+    "automated_validation": "passed",
+    "physical_device_validation": "pending"
+  },
+  "device_families": [
+    {"id": "wave-plus", "status": "implemented"},
+    {"id": "wave-radon", "status": "implemented"},
+    {"id": "wave-mini", "status": "implemented"},
+    {"id": "wave-enhance", "status": "implemented"},
+    {"id": "view-plus", "status": "implemented"},
+    {"id": "view-radon", "status": "implemented"},
+    {"id": "corentium-home-2", "status": "implemented"}
+  ],
+  "capabilities": [
+    {"id": "radon_short_term_bqm3", "status": "implemented"},
+    {"id": "radon_long_term_bqm3", "status": "implemented"},
+    {"id": "temperature_c", "status": "implemented"},
+    {"id": "humidity_percent", "status": "implemented"},
+    {"id": "mold_risk_level", "status": "implemented", "scope": "Wave Mini"},
+    {"id": "pressure_hpa", "status": "implemented"},
+    {"id": "co2_ppm", "status": "implemented"},
+    {"id": "voc_ppb", "status": "implemented"},
+    {"id": "pm1_ugm3", "status": "implemented"},
+    {"id": "pm25_ugm3", "status": "implemented"},
+    {"id": "battery_percent", "status": "implemented"},
+    {"id": "refresh", "status": "implemented"},
+    {"id": "rssi_dbm", "status": "excluded", "reason": "Retained as transport diagnostics rather than exposed as a dashboard capability."}
+  ],
+  "commands": [
+    {"id": "refresh", "status": "implemented"}
+  ]
+}

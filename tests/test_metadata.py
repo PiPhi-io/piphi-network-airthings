@@ -27,6 +27,27 @@ def test_manifest_and_behaviors_align() -> None:
     assert behavior_capabilities == manifest_capabilities
 
 
+def test_capability_catalog_marks_declared_scope_implementation_complete() -> None:
+    root = Path(__file__).resolve().parent.parent
+    manifest = json.loads((root / "src" / "manifest.json").read_text())
+    catalog = json.loads((root / "docs" / "capability-catalog.json").read_text())
+    rows = {row["id"]: row for row in catalog["capabilities"]}
+
+    assert catalog["integration_id"] == manifest["id"]
+    assert catalog["catalog_version"] == manifest["version"]
+    assert catalog["completion"] == {
+        "status": "implementation_complete",
+        "scope": "Airthings Consumer Cloud devices and readings declared by this integration",
+        "automated_validation": "passed",
+        "physical_device_validation": "pending",
+    }
+    assert set(manifest["capabilities"]) <= rows.keys()
+    assert all(rows[capability]["status"] == "implemented" for capability in manifest["capabilities"])
+    assert set(manifest["commands"]) == {
+        row["id"] for row in catalog["commands"] if row["status"] == "implemented"
+    }
+
+
 def test_air_quality_experience_matches_integration_capabilities() -> None:
     root = Path(__file__).resolve().parent.parent
     manifest = json.loads((root / "src" / "manifest.json").read_text())
@@ -68,6 +89,9 @@ def test_air_quality_experience_matches_integration_capabilities() -> None:
     assert widget["default_theme_id"] == "airthings"
     assert {theme["id"] for theme in widget["themes"]} == {"airthings", "quiet"}
     assert all(item["action"]["type"] == "details" for item in widget["recipe"]["items"])
+    branded_theme = (root / "experiences" / "air-quality" / "themes" / "airthings.css").read_text()
+    assert "--piphi-experience-shadow: none;" in branded_theme
+    assert "--piphi-experience-tile-shadow: none;" in branded_theme
 
 
 def test_air_quality_release_archive_contains_normalized_theme_contract() -> None:
