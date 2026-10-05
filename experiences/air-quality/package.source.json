@@ -3,7 +3,7 @@
   "identity": {
     "publisher_id": "io.piphi",
     "package_id": "airthings-air-quality",
-    "version": "0.1.5"
+    "version": "0.1.6"
   },
   "name": "Airthings Air Quality",
   "description": "A focused overview of the Airthings readings that matter most at a glance.",
@@ -17,7 +17,9 @@
       "optional": false
     }
   ],
-  "recommended_for_integrations": ["airthings-consumer-cloud-api"],
+  "recommended_for_integrations": [
+    "airthings-consumer-cloud-api"
+  ],
   "widgets": [
     {
       "id": "air-quality-overview",
@@ -41,19 +43,89 @@
         }
       ],
       "default_theme_id": "airthings",
-      "presentation": {"contract_version": "1", "shell": "core", "content_surface": "transparent", "typography": "core", "appearance_controls": ["icon", "title", "surface", "opacity", "radius", "shadow"]},
+      "presentation": {
+        "contract_version": "1",
+        "shell": "core",
+        "content_surface": "transparent",
+        "typography": "core",
+        "appearance_controls": [
+          "icon",
+          "title",
+          "surface",
+          "opacity",
+          "radius",
+          "shadow"
+        ]
+      },
       "interaction_targets": [
-        {"id": "air-quality-card", "label": "Airthings air quality", "kind": "card", "allowed_actions": ["more-info", "popout", "refresh"], "default_action": "more-info"},
-        {"id": "temperature", "label": "Temperature", "kind": "binding", "binding_slot_id": "temperature", "allowed_actions": ["more-info", "history", "popout"], "default_action": "more-info"},
-        {"id": "humidity", "label": "Humidity", "kind": "binding", "binding_slot_id": "humidity", "allowed_actions": ["more-info", "history", "popout"], "default_action": "more-info"},
-        {"id": "radon", "label": "Radon", "kind": "binding", "binding_slot_id": "radon", "allowed_actions": ["more-info", "history", "popout"], "default_action": "more-info"},
-        {"id": "co2", "label": "Carbon dioxide", "kind": "binding", "binding_slot_id": "co2", "allowed_actions": ["more-info", "history", "popout"], "default_action": "more-info"}
+        {
+          "id": "air-quality-card",
+          "label": "Airthings air quality",
+          "kind": "card",
+          "allowed_actions": [
+            "more-info",
+            "popout",
+            "refresh"
+          ],
+          "default_action": "more-info"
+        },
+        {
+          "id": "temperature",
+          "label": "Temperature",
+          "kind": "binding",
+          "binding_slot_id": "temperature",
+          "allowed_actions": [
+            "more-info",
+            "history",
+            "popout"
+          ],
+          "default_action": "more-info"
+        },
+        {
+          "id": "humidity",
+          "label": "Humidity",
+          "kind": "binding",
+          "binding_slot_id": "humidity",
+          "allowed_actions": [
+            "more-info",
+            "history",
+            "popout"
+          ],
+          "default_action": "more-info"
+        },
+        {
+          "id": "radon",
+          "label": "Radon",
+          "kind": "binding",
+          "binding_slot_id": "radon",
+          "allowed_actions": [
+            "more-info",
+            "history",
+            "popout"
+          ],
+          "default_action": "more-info"
+        },
+        {
+          "id": "co2",
+          "label": "Carbon dioxide",
+          "kind": "binding",
+          "binding_slot_id": "co2",
+          "allowed_actions": [
+            "more-info",
+            "history",
+            "popout"
+          ],
+          "default_action": "more-info"
+        }
       ],
       "core_card_replacements": [
         {
           "schema_version": "1",
           "id": "airthings-air-quality-v1",
-          "source_card_types": ["sensor-card", "stat"],
+          "source_card_types": [
+            "sensor-card",
+            "stat"
+          ],
           "source_capability_ids": [
             "temperature_c",
             "humidity_percent",
@@ -64,35 +136,154 @@
         }
       ],
       "binding_slots": [
-        {"id": "temperature", "label": "Temperature", "required": true, "binding_modes": ["read"], "capability_requirements": ["temperature_c"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
-        {"id": "humidity", "label": "Humidity", "required": false, "binding_modes": ["read"], "capability_requirements": ["humidity_percent"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
-        {"id": "radon", "label": "Radon", "required": false, "binding_modes": ["read"], "capability_requirements": ["radon_short_term_bqm3"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]},
-        {"id": "co2", "label": "Carbon dioxide", "required": false, "binding_modes": ["read"], "capability_requirements": ["co2_ppm"], "compatible_integration_ids": ["airthings-consumer-cloud-api"]}
+        {
+          "id": "temperature",
+          "label": "Temperature",
+          "required": true,
+          "binding_modes": [
+            "read"
+          ],
+          "capability_requirements": [
+            "temperature_c"
+          ],
+          "compatible_integration_ids": [
+            "airthings-consumer-cloud-api"
+          ]
+        },
+        {
+          "id": "humidity",
+          "label": "Humidity",
+          "required": false,
+          "binding_modes": [
+            "read"
+          ],
+          "capability_requirements": [
+            "humidity_percent"
+          ],
+          "compatible_integration_ids": [
+            "airthings-consumer-cloud-api"
+          ]
+        },
+        {
+          "id": "radon",
+          "label": "Radon",
+          "required": false,
+          "binding_modes": [
+            "read"
+          ],
+          "capability_requirements": [
+            "radon_short_term_bqm3"
+          ],
+          "compatible_integration_ids": [
+            "airthings-consumer-cloud-api"
+          ]
+        },
+        {
+          "id": "co2",
+          "label": "Carbon dioxide",
+          "required": false,
+          "binding_modes": [
+            "read"
+          ],
+          "capability_requirements": [
+            "co2_ppm"
+          ],
+          "compatible_integration_ids": [
+            "airthings-consumer-cloud-api"
+          ]
+        }
       ],
       "recipe": {
         "schema_version": "1",
         "layout": "grid",
         "columns": 2,
         "items": [
-          {"type": "metric", "slot_id": "temperature", "label": "Temperature", "format": "temperature", "domain": "temperature", "emphasis": "hero", "action": {"type": "details", "label": "View temperature details"}},
-          {"type": "metric", "slot_id": "humidity", "label": "Humidity", "format": "percent", "domain": "humidity", "action": {"type": "details", "label": "View humidity details"}},
-          {"type": "metric", "slot_id": "radon", "label": "Radon", "domain": "air_quality", "action": {"type": "details", "label": "View radon details"}},
-          {"type": "metric", "slot_id": "co2", "label": "CO₂", "domain": "air_quality", "action": {"type": "details", "label": "View carbon dioxide details"}}
+          {
+            "type": "metric",
+            "slot_id": "temperature",
+            "label": "Temperature",
+            "format": "temperature",
+            "domain": "temperature",
+            "emphasis": "hero",
+            "action": {
+              "type": "details",
+              "label": "View temperature details"
+            }
+          },
+          {
+            "type": "metric",
+            "slot_id": "humidity",
+            "label": "Humidity",
+            "format": "percent",
+            "domain": "humidity",
+            "action": {
+              "type": "details",
+              "label": "View humidity details"
+            }
+          },
+          {
+            "type": "metric",
+            "slot_id": "radon",
+            "label": "Radon",
+            "domain": "air_quality",
+            "action": {
+              "type": "details",
+              "label": "View radon details"
+            }
+          },
+          {
+            "type": "metric",
+            "slot_id": "co2",
+            "label": "CO\u2082",
+            "domain": "air_quality",
+            "action": {
+              "type": "details",
+              "label": "View carbon dioxide details"
+            }
+          }
         ]
       },
       "certification": {
         "schema_version": "1",
-        "verified_gates": ["runtime", "persistence", "binding", "states", "responsive", "themes", "accessibility", "save-reload", "performance"],
+        "verified_gates": [
+          "runtime",
+          "persistence",
+          "binding",
+          "states",
+          "responsive",
+          "themes",
+          "accessibility",
+          "save-reload",
+          "performance"
+        ],
         "evidence": {
-          "runtime": ["core-profile:declarative-v2/runtime"],
-          "persistence": ["core-profile:declarative-v2/persistence"],
-          "binding": ["core-profile:declarative-v2/binding"],
-          "states": ["core-profile:declarative-v2/states"],
-          "responsive": ["core-profile:declarative-v2/responsive"],
-          "themes": ["core-profile:declarative-v2/themes"],
-          "accessibility": ["core-profile:declarative-v2/accessibility"],
-          "save-reload": ["core-profile:declarative-v2/save-reload"],
-          "performance": ["core-profile:declarative-v2/performance"]
+          "runtime": [
+            "core-profile:declarative-v2/runtime"
+          ],
+          "persistence": [
+            "core-profile:declarative-v2/persistence"
+          ],
+          "binding": [
+            "core-profile:declarative-v2/binding"
+          ],
+          "states": [
+            "core-profile:declarative-v2/states"
+          ],
+          "responsive": [
+            "core-profile:declarative-v2/responsive"
+          ],
+          "themes": [
+            "core-profile:declarative-v2/themes"
+          ],
+          "accessibility": [
+            "core-profile:declarative-v2/accessibility"
+          ],
+          "save-reload": [
+            "core-profile:declarative-v2/save-reload"
+          ],
+          "performance": [
+            "core-profile:declarative-v2/performance"
+          ]
         }
       },
       "default_column_span": 4,
