@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import math
 from typing import Any
 
 
@@ -33,10 +34,30 @@ _DEFAULT_UNITS = {
     MOLD_RISK_METRIC_KEY: "score",
 }
 
+_METRIC_RANGES = {
+    "radon_short_term_bqm3": (0.0, 100_000.0),
+    "radon_long_term_bqm3": (0.0, 100_000.0),
+    "temperature_c": (-50.0, 100.0),
+    "humidity_percent": (0.0, 100.0),
+    "pressure_hpa": (300.0, 1_200.0),
+    "co2_ppm": (0.0, 100_000.0),
+    "voc_ppb": (0.0, 60_000.0),
+    "pm1_ugm3": (0.0, 10_000.0),
+    "pm25_ugm3": (0.0, 10_000.0),
+    "battery_percent": (0.0, 100.0),
+    "rssi_dbm": (-200.0, 0.0),
+    MOLD_RISK_METRIC_KEY: (0.0, 10.0),
+}
+
 
 def _coerce_datetime(value: Any) -> str:
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), tz=UTC).isoformat()
+        try:
+            numeric = float(value)
+            if math.isfinite(numeric):
+                return datetime.fromtimestamp(numeric, tz=UTC).isoformat()
+        except (OverflowError, OSError, TypeError, ValueError):
+            pass
     if isinstance(value, str) and value:
         return value
     return datetime.now(tz=UTC).isoformat()
@@ -47,7 +68,7 @@ def _coerce_float(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return None
 
 
@@ -55,9 +76,28 @@ def _coerce_int(value: Any) -> int | None:
     if value is None:
         return None
     try:
-        return int(float(value))
-    except (TypeError, ValueError):
+        numeric = float(value)
+        return int(numeric) if math.isfinite(numeric) else None
+    except (OverflowError, TypeError, ValueError):
         return None
+
+
+def _validated_metric(metric_key: str, value: float | int | None) -> float | int | None:
+    try:
+        numeric = float(value) if value is not None else math.nan
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    minimum, maximum = _METRIC_RANGES[metric_key]
+    return value if minimum <= numeric <= maximum else None
+
+
+def _validated_metrics(metrics: dict[str, float | int | None]) -> dict[str, float | int | None]:
+    return {
+        metric_key: _validated_metric(metric_key, value)
+        for metric_key, value in metrics.items()
+    }
 
 
 @dataclass(slots=True)
@@ -132,12 +172,16 @@ class AirthingsLatestSample:
                 if mapping is None:
                     continue
                 metric_key, coercer = mapping
-                metrics[metric_key] = coercer(sensor.get("value"))
+                metrics[metric_key] = _validated_metric(
+                    metric_key,
+                    coercer(sensor.get("value")),
+                )
                 sensor_unit = str(sensor.get("unit") or "").strip()
                 if sensor_unit:
                     units[metric_key] = sensor_unit
-            metrics["battery_percent"] = _coerce_int(
-                payload.get("batteryPercentage") or payload.get("battery")
+            metrics["battery_percent"] = _validated_metric(
+                "battery_percent",
+                _coerce_int(payload.get("batteryPercentage") or payload.get("battery")),
             )
             recorded_at = _coerce_datetime(payload.get("recorded") or payload.get("time"))
             return cls(
@@ -150,7 +194,7 @@ class AirthingsLatestSample:
             )
 
         data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-        metrics = {
+        metrics = _validated_metrics({
             "radon_short_term_bqm3": _coerce_float(data.get("radonShortTermAvg")),
             "radon_long_term_bqm3": _coerce_float(data.get("radonLongTermAvg")),
             "temperature_c": _coerce_float(data.get("temp")),
@@ -162,7 +206,7 @@ class AirthingsLatestSample:
             "pm25_ugm3": _coerce_float(data.get("pm25")),
             "battery_percent": _coerce_int(data.get("battery")),
             "rssi_dbm": _coerce_int(data.get("rssi")),
-        }
+        })
         units = {**_DEFAULT_UNITS}
         recorded_at = _coerce_datetime(data.get("recorded") or data.get("time"))
         return cls(
@@ -180,7 +224,7 @@ class AirthingsLatestSample:
             "sampled_at": self.recorded_at,
             "relay_device_type": self.relay_device_type,
             "metadata": {
-                "raw": self.raw,
+                "serial_number": self.serial_number,
             },
         }
 

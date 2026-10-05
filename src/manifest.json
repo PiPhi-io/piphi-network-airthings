@@ -125,6 +125,7 @@
   "api": {
     "base_url": "http://127.0.0.1:3669",
     "endpoints": {
+      "contract": "/contract",
       "health": "/health",
       "discover": "/discover",
       "entities": "/entities",
@@ -292,13 +293,7 @@
       }
     },
     "refresh": {
-      "kind": "action",
-      "dashboard": {
-        "allowed_widgets": [
-          "button"
-        ],
-        "default_widget": "button"
-      }
+      "kind": "action"
     }
   },
   "commands": {

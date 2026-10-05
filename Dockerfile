@@ -1,5 +1,17 @@
 FROM python:3.12-slim
 
+ARG RELEASE_VERSION=0.0.0-unqualified
+ARG SOURCE_REVISION=0000000000000000000000000000000000000000
+ARG SOURCE_REPOSITORY=https://github.com/PiPhi-io/piphi-network-airthings
+ARG MANIFEST_SHA256=unqualified
+ARG BEHAVIORS_SHA256=unqualified
+
+LABEL org.opencontainers.image.version="${RELEASE_VERSION}" \
+    org.opencontainers.image.revision="${SOURCE_REVISION}" \
+    org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
+    io.piphi.manifest.sha256="${MANIFEST_SHA256}" \
+    io.piphi.behaviors.sha256="${BEHAVIORS_SHA256}"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

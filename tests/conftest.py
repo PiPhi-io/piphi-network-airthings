@@ -8,6 +8,7 @@ import sys
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from piphi_runtime_kit_python import build_runtime_auth_headers
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = PROJECT_ROOT / "src"
@@ -80,6 +81,19 @@ async def _reset_runtime(fake_cloud_client: FakeAirthingsCloudClient) -> AsyncIt
 
 @pytest_asyncio.fixture
 async def async_client() -> AsyncIterator[AsyncClient]:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers=build_runtime_auth_headers(
+            container_id="container-1",
+            internal_token="runtime-token-1",
+        ),
+    ) as client:
+        yield client
+
+
+@pytest_asyncio.fixture
+async def unauthenticated_client() -> AsyncIterator[AsyncClient]:
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",

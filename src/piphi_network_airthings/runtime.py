@@ -41,7 +41,6 @@ from piphi_runtime_kit_python import (
 )
 from piphi_runtime_kit_python.fastapi import (
     dispatch_automation_action_from_fastapi,
-    sync_runtime_auth_from_fastapi_payload,
 )
 from piphi_runtime_kit_python.runtime.errors import CoreDeliveryError
 
@@ -52,6 +51,7 @@ from .cloud.client import (
     AirthingsCloudRateLimitError,
     AirthingsCloudRequestError,
     AirthingsCredentials,
+    airthings_cloud_client_from_environment,
 )
 from .cloud.models import (
     MOLD_RISK_METRIC_KEY,
@@ -61,6 +61,7 @@ from .cloud.models import (
     supports_mold_risk,
 )
 from .manifest import load_manifest
+from .runtime_auth import authorize_runtime_request
 
 
 manifest = load_manifest()
@@ -82,7 +83,7 @@ registry = starter.registry
 telemetry_client = starter.telemetry_client
 event_client = starter.event_client
 config_sync = starter.config_sync
-cloud_client = AirthingsCloudClient()
+cloud_client = airthings_cloud_client_from_environment()
 router = APIRouter()
 _automation_ledger_path = Path(
     os.getenv(
@@ -437,6 +438,8 @@ def _record_heartbeat_delivery(
 ) -> None:
     try:
         delivered = task.result()
+    except asyncio.CancelledError:
+        return
     except Exception as exc:
         _update_poll_status(config_id, last_core_delivery_error=str(exc))
         return
@@ -649,6 +652,61 @@ async def _read_and_store(config_id: str) -> AirthingsLatestSample:
     return sample
 
 
+async def poll_once(config_id: str) -> None:
+    """Run one production poll, including its normal offline telemetry path."""
+    entry = registry.get(config_id)
+    was_offline = entry is not None and entry.get("poll_health") == "offline"
+    try:
+        sample = await _read_and_store(config_id)
+        entry = registry.get(config_id)
+        if entry is not None:
+            entry["poll_health"] = "online"
+            if was_offline:
+                _schedule_runtime_event_delivery(
+                    event_type="airthings.cloud.sample.recovered",
+                    device=entry,
+                    payload={"recorded_at": sample.recorded_at},
+                )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        entry = registry.get(config_id)
+        if entry is not None:
+            safe_error = _safe_poll_error(exc)
+            first_offline_transition = entry.get("poll_health") != "offline"
+            entry["poll_health"] = "offline"
+            registry.update_state(
+                config_id,
+                {
+                    "connected": False,
+                    "serial_number": entry["serial_number"],
+                    "device_model": entry.get("device_model"),
+                    "name": _entry_name(entry),
+                    "last_error": safe_error,
+                },
+            )
+            schedule_telemetry_delivery(
+                process_state=runtime.process_state,
+                telemetry_client=telemetry_client,
+                auth_context=runtime.auth,
+                config_id=str(config_id),
+                device_id=str(entry["serial_number"]),
+                metrics={"connected": False, "read_failed": True},
+                container_id=entry.get("container_id"),
+                timestamp=registry.state_snapshots.get(config_id, {}).get("last_updated"),
+                on_error=_handle_telemetry_delivery_error,
+                on_skipped=_handle_telemetry_delivery_skipped,
+            )
+            if first_offline_transition:
+                _schedule_runtime_event_delivery(
+                    event_type="airthings.cloud.sample.failed",
+                    device=entry,
+                    payload={"error": safe_error},
+                    severity="warning",
+                )
+            logger.warning("Airthings cloud poll failed for %s error=%s", _entry_log_label(entry), exc)
+
+
 async def _poll_config(config_id: str, interval_seconds: int) -> None:
     logger.info("airthings_poll_started config_id=%s interval_seconds=%s", config_id, interval_seconds)
     first_iteration = True
@@ -663,56 +721,17 @@ async def _poll_config(config_id: str, interval_seconds: int) -> None:
                 )
                 first_iteration = False
                 await asyncio.sleep(interval_seconds)
-            sample = await _read_and_store(config_id)
+            await poll_once(config_id)
             _update_poll_status(
                 config_id,
                 next_poll_due=(
                     asyncio.get_running_loop().time() + interval_seconds
                 ),
             )
-            _schedule_runtime_event_delivery(
-                event_type="airthings.cloud.sample.updated",
-                device=registry.get(config_id) or {"config_id": config_id},
-                payload={
-                    "recorded_at": sample.recorded_at,
-                },
-            )
+            await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             logger.info("airthings_poll_stopped config_id=%s", config_id)
             raise
-        except Exception as exc:
-            entry = registry.get(config_id)
-            if entry is not None:
-                registry.update_state(
-                    config_id,
-                    {
-                        "connected": False,
-                        "serial_number": entry["serial_number"],
-                        "device_model": entry.get("device_model"),
-                        "name": _entry_name(entry),
-                        "last_error": str(exc),
-                    },
-                )
-                schedule_telemetry_delivery(
-                    process_state=runtime.process_state,
-                    telemetry_client=telemetry_client,
-                    auth_context=runtime.auth,
-                    config_id=str(config_id),
-                    device_id=str(entry["serial_number"]),
-                    metrics={"connected": False, "read_failed": True},
-                    container_id=entry.get("container_id"),
-                    timestamp=registry.state_snapshots.get(config_id, {}).get("last_updated"),
-                    on_error=_handle_telemetry_delivery_error,
-                    on_skipped=_handle_telemetry_delivery_skipped,
-                )
-                _schedule_runtime_event_delivery(
-                    event_type="airthings.cloud.sample.failed",
-                    device=entry,
-                    payload={"error": str(exc)},
-                    severity="warning",
-                )
-                logger.warning("Airthings cloud poll failed for %s error=%s", _entry_log_label(entry), exc)
-        await asyncio.sleep(interval_seconds)
 
 
 async def _ensure_known_device(config: AirthingsCloudConfig) -> AirthingsCloudDevice:
@@ -747,20 +766,6 @@ async def apply_config(config: AirthingsCloudConfig) -> dict[str, Any]:
         and str(previous_entry.get("serial_number")) == str(config.serial_number)
         else None
     )
-    duplicate_device_config_ids = [
-        active_config_id
-        for active_config_id, active_entry in list(registry.entries.items())
-        if active_config_id != config_id
-        and str(active_entry.get("serial_number")) == str(config.serial_number)
-    ]
-    for duplicate_config_id in duplicate_device_config_ids:
-        logger.info(
-            "airthings_config_replaced duplicate_config_id=%s serial_number=%s replacement_config_id=%s",
-            duplicate_config_id,
-            config.serial_number,
-            config_id,
-        )
-        await remove_config(duplicate_config_id)
     await remove_config(config_id)
     entry = {
         "config_id": config_id,
@@ -799,9 +804,11 @@ async def apply_config(config: AirthingsCloudConfig) -> dict[str, Any]:
     initial_error: str | None = None
     try:
         await _read_and_store(config_id)
+        entry["poll_health"] = "online"
         logger.info("airthings_initial_read_succeeded %s", _entry_log_label(entry))
     except Exception as exc:
-        initial_error = str(exc)
+        initial_error = _safe_poll_error(exc)
+        entry["poll_health"] = "offline"
         registry.update_state(
             config_id,
             {
@@ -893,8 +900,21 @@ def _raise_http_for_cloud_error(exc: AirthingsCloudError) -> None:
     if isinstance(exc, AirthingsCloudRateLimitError):
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     if isinstance(exc, AirthingsCloudRequestError):
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Airthings consumer cloud request failed.",
+        ) from exc
     raise exc
+
+
+def _safe_poll_error(exc: Exception) -> str:
+    if isinstance(exc, AirthingsCloudAuthError):
+        return "Airthings consumer cloud credentials were rejected."
+    if isinstance(exc, AirthingsCloudRateLimitError):
+        return "Airthings consumer cloud rate limit exceeded."
+    if isinstance(exc, AirthingsCloudError):
+        return "Airthings consumer cloud request failed."
+    return "Airthings poll failed."
 
 
 async def _extract_discovery_inputs(
@@ -990,6 +1010,38 @@ def _build_entities_payload() -> list[dict[str, Any]]:
     return entities
 
 
+@router.get("/contract")
+async def runtime_contract() -> dict[str, Any]:
+    endpoints = dict(manifest.get("api", {}).get("endpoints", {}))
+    return {
+        "integration_id": INTEGRATION_ID,
+        "name": INTEGRATION_NAME,
+        "version": INTEGRATION_VERSION,
+        "kind": manifest.get("kind", "integration"),
+        "endpoints": {
+            key: endpoints[key]
+            for key in (
+                "health",
+                "entities",
+                "events",
+                "command",
+                "state",
+                "config",
+                "config_sync",
+            )
+        },
+        "required": [
+            "health",
+            "entities",
+            "events",
+            "command",
+            "state",
+            "config",
+            "config_sync",
+        ],
+    }
+
+
 @router.get("/health")
 async def health() -> RuntimeHealthResponse:
     return starter.health_response(
@@ -1002,7 +1054,8 @@ async def health() -> RuntimeHealthResponse:
 
 
 @router.get("/diagnostics")
-async def diagnostics() -> RuntimeDiagnosticsResponse:
+async def diagnostics(request: Request) -> RuntimeDiagnosticsResponse:
+    authorize_runtime_request(request, runtime_context=runtime)
     return starter.diagnostics_response(
         diagnostics={
             "active_config_ids": registry.ids(),
@@ -1075,6 +1128,7 @@ async def discover(
     request: Request,
     payload: IntegrationDiscoveryRequest | None = None,
 ) -> IntegrationDiscoveryResponse:
+    authorize_runtime_request(request, runtime_context=runtime, allow_bootstrap=True)
     inputs = await _extract_discovery_inputs(request, payload)
     client_id = str(inputs.get("client_id") or "").strip()
     client_secret = str(inputs.get("client_secret") or "").strip()
@@ -1098,7 +1152,12 @@ async def discover(
 
 @router.post("/config")
 async def config(payload: AirthingsCloudConfig, request: Request) -> RuntimeConfigApplyResponse:
-    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+    authorize_runtime_request(
+        request,
+        runtime_context=runtime,
+        allow_bootstrap=True,
+        payload_container_id=getattr(payload, "container_id", None),
+    )
     logger.info("airthings_config_request_received %s", _config_log_label(payload))
     entry = await apply_config(payload)
     return build_config_apply_response(
@@ -1152,13 +1211,18 @@ async def apply_runtime_config_snapshot(payload: RuntimeConfigSnapshot) -> Runti
 @router.post("/configs/sync")
 @router.post("/config/sync")
 async def configs_sync(payload: RuntimeConfigSnapshot, request: Request) -> RuntimeConfigSyncResponse:
-    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+    authorize_runtime_request(
+        request,
+        runtime_context=runtime,
+        allow_bootstrap=True,
+        payload_container_id=payload.container_id,
+    )
     return await apply_runtime_config_snapshot(payload)
 
 
 @router.post("/deconfigure")
 async def deconfigure(payload: DeconfigurePayload, request: Request) -> RuntimeConfigRemoveResponse:
-    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+    authorize_runtime_request(request, runtime_context=runtime)
     config_id = str(payload.config.get("config_id") or payload.config.get("id") or "").strip()
     if not config_id:
         raise HTTPException(status_code=400, detail="config_id is required.")
@@ -1168,40 +1232,70 @@ async def deconfigure(payload: DeconfigurePayload, request: Request) -> RuntimeC
 
 
 @router.get("/entities")
-async def entities() -> dict[str, Any]:
+async def entities(request: Request) -> dict[str, Any]:
+    authorize_runtime_request(request, runtime_context=runtime)
     return starter.entities_response(entities=_build_entities_payload()).model_dump()
 
 
 @router.get("/state")
-async def state() -> dict[str, Any]:
+async def state(request: Request) -> dict[str, Any]:
+    authorize_runtime_request(request, runtime_context=runtime)
     return {
-        "state": registry.state_snapshots,
+        "entries": {
+            config_id: {
+                "config_id": config_id,
+                "device_id": entry.get("serial_number"),
+                "latest_state": dict(
+                    registry.state_snapshots.get(config_id, {}).get("state", {})
+                ),
+                "last_updated": registry.state_snapshots.get(config_id, {}).get(
+                    "last_updated"
+                ),
+            }
+            for config_id, entry in registry.entries.items()
+        },
     }
 
 
 @router.get("/events", response_model=IntegrationEventListResponse)
-async def events() -> IntegrationEventListResponse:
+async def events(request: Request) -> IntegrationEventListResponse:
+    authorize_runtime_request(request, runtime_context=runtime)
     return build_event_list_response(registry.recent_events)
 
 
 @router.post("/command")
 async def command(payload: IntegrationCommandRequest, request: Request) -> dict[str, Any]:
-    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
+    authorize_runtime_request(request, runtime_context=runtime)
     logger.info(
-        "airthings_command_received command=%s device_id=%s entity_id=%s args=%s",
+        "airthings_command_received command=%s device_id=%s entity_id=%s",
         payload.command,
         payload.device_id,
         payload.entity_id,
-        payload.args,
     )
+    if any(key != "config_id" for key in payload.args):
+        raise HTTPException(
+            status_code=400,
+            detail="Refresh accepts only the config_id argument.",
+        )
     config_id = str(payload.args.get("config_id") or "").strip()
     if not config_id and payload.entity_id and payload.entity_id.startswith("device:"):
         config_id = payload.entity_id.split(":", 1)[1]
     if not config_id and payload.device_id:
-        for candidate_id, entry in registry.entries.items():
-            if str(entry.get("serial_number")) == str(payload.device_id):
-                config_id = candidate_id
-                break
+        matching_config_ids = [
+            candidate_id
+            for candidate_id, entry in registry.entries.items()
+            if str(entry.get("serial_number")) == str(payload.device_id)
+        ]
+        if len(matching_config_ids) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "device_id matches multiple configurations; provide config_id "
+                    "or an exact device entity_id"
+                ),
+            )
+        if matching_config_ids:
+            config_id = matching_config_ids[0]
     if not config_id:
         raise HTTPException(status_code=400, detail="Command must include config_id, entity_id, or device_id.")
     if payload.command != "refresh":

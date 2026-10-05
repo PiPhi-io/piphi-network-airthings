@@ -116,6 +116,16 @@ def parse_args() -> argparse.Namespace:
         help="Path to manifest.json, relative to repo-root unless absolute.",
     )
     parser.add_argument(
+        "--capability-catalog",
+        default="docs/capability-catalog.json",
+        help="Capability catalog version projection to update.",
+    )
+    parser.add_argument(
+        "--experience-package",
+        default="experiences/air-quality/package.source.json",
+        help="Experience package version projection to update.",
+    )
+    parser.add_argument(
         "--docker-image",
         default=None,
         help="Override the primary container image repository to pin in the manifest.",
@@ -295,15 +305,32 @@ def update_primary_container_images(manifest: dict, *, docker_image: str, versio
             container["image"] = tagged_image
 
 
+def update_release_projections(
+    *,
+    catalog: dict,
+    experience_package: dict,
+    version: str,
+) -> None:
+    catalog["catalog_version"] = version
+    identity = experience_package.get("identity")
+    if not isinstance(identity, dict):
+        raise ValueError("Experience package identity is missing")
+    identity["version"] = version
+
+
 def main() -> int:
     args = parse_args()
     repo_root = resolve_repo_root(args.repo_root)
     pyproject_path = resolve_path(repo_root, args.pyproject)
     manifest_path = resolve_path(repo_root, args.manifest)
+    catalog_path = resolve_path(repo_root, args.capability_catalog)
+    experience_path = resolve_path(repo_root, args.experience_package)
 
     pyproject_text = pyproject_path.read_text(encoding="utf-8")
     pyproject_version = read_pyproject_version(pyproject_text)
     manifest = load_manifest(manifest_path)
+    catalog = load_manifest(catalog_path)
+    experience_package = load_manifest(experience_path)
     manifest_version = SemVer.parse(str(manifest.get("version") or "").strip())
 
     if pyproject_version.compare(manifest_version) != 0:
@@ -328,9 +355,16 @@ def main() -> int:
         docker_image = args.docker_image or infer_primary_container_repo(manifest)
         if docker_image:
             update_primary_container_images(manifest, docker_image=docker_image, version=target_version)
+    update_release_projections(
+        catalog=catalog,
+        experience_package=experience_package,
+        version=target_version,
+    )
 
     pyproject_path.write_text(write_pyproject_version(pyproject_text, target_version), encoding="utf-8")
     dump_manifest(manifest_path, manifest)
+    dump_manifest(catalog_path, catalog)
+    dump_manifest(experience_path, experience_package)
     print(target_version)
     return 0
 

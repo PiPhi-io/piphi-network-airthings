@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -20,6 +23,9 @@ DEFAULT_HTTP_TIMEOUT_SECONDS = 15.0
 DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_DELAY_SECONDS = 1.0
 TOKEN_EXPIRY_SAFETY_SECONDS = 120
+ACCOUNTS_BASE_URL_ENV = "PIPHI_AIRTHINGS_ACCOUNTS_BASE_URL"
+CONSUMER_BASE_URL_ENV = "PIPHI_AIRTHINGS_CONSUMER_BASE_URL"
+ALLOW_INSECURE_TEST_ENDPOINTS_ENV = "PIPHI_AIRTHINGS_ALLOW_INSECURE_TEST_ENDPOINTS"
 
 
 class AirthingsCloudError(RuntimeError):
@@ -38,13 +44,48 @@ class AirthingsCloudRequestError(AirthingsCloudError):
     """Raised for unexpected Airthings consumer cloud request failures."""
 
 
+def _environment_base_url(name: str, default: str, *, allow_insecure: bool) -> str:
+    value = str(os.getenv(name) or default).strip().rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{name} must be an absolute HTTP(S) URL.")
+    if parsed.scheme != "https" and not allow_insecure:
+        raise ValueError(
+            f"{name} requires HTTPS unless "
+            f"{ALLOW_INSECURE_TEST_ENDPOINTS_ENV}=true is set for an isolated test fixture."
+        )
+    return value
+
+
+def airthings_cloud_client_from_environment() -> AirthingsCloudClient:
+    """Build the runtime client, permitting HTTP overrides only for explicit test fixtures."""
+    allow_insecure = str(os.getenv(ALLOW_INSECURE_TEST_ENDPOINTS_ENV) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return AirthingsCloudClient(
+        accounts_base_url=_environment_base_url(
+            ACCOUNTS_BASE_URL_ENV,
+            DEFAULT_ACCOUNTS_BASE_URL,
+            allow_insecure=allow_insecure,
+        ),
+        consumer_base_url=_environment_base_url(
+            CONSUMER_BASE_URL_ENV,
+            DEFAULT_CONSUMER_BASE_URL,
+            allow_insecure=allow_insecure,
+        ),
+    )
+
+
 @dataclass(slots=True)
 class AirthingsCredentials:
     client_id: str
     client_secret: str
 
     def cache_key(self) -> str:
-        return self.client_id
+        material = f"{self.client_id}\0{self.client_secret}".encode("utf-8")
+        return hashlib.sha256(material).hexdigest()
 
 
 @dataclass(slots=True)
@@ -157,9 +198,9 @@ class AirthingsCloudClient:
 
         if last_error is not None:
             raise AirthingsCloudRequestError(
-                f"Airthings API request failed: {type(last_error).__name__}: {last_error}"
+                "Airthings API request failed due to a network error."
             ) from last_error
-        raise AirthingsCloudRequestError(f"Airthings API request failed for {method} {url}")
+        raise AirthingsCloudRequestError("Airthings API request failed.")
 
     async def _access_token(self, credentials: AirthingsCredentials) -> str:
         cached = self._token_cache.get(credentials.cache_key())
@@ -192,7 +233,7 @@ class AirthingsCloudClient:
             raise AirthingsCloudAuthError("Airthings consumer cloud credentials were rejected.")
         if response.status_code >= 400:
             raise AirthingsCloudRequestError(
-                f"Airthings token request failed with status {response.status_code}: {response.text}"
+                f"Airthings token request failed with status {response.status_code}."
             )
         payload = response.json()
         access_token = str(payload.get("access_token") or "")
@@ -236,7 +277,7 @@ class AirthingsCloudClient:
             )
         if response.status_code >= 400:
             raise AirthingsCloudRequestError(
-                f"Airthings account lookup failed with status {response.status_code}: {response.text}"
+                f"Airthings account lookup failed with status {response.status_code}."
             )
 
         payload = response.json()
@@ -272,7 +313,7 @@ class AirthingsCloudClient:
             raise AirthingsCloudAuthError("Airthings consumer cloud token was rejected while listing devices.")
         if response.status_code >= 400:
             raise AirthingsCloudRequestError(
-                f"Airthings device discovery failed with status {response.status_code}: {response.text}"
+                f"Airthings device discovery failed with status {response.status_code}."
             )
         payload = response.json()
         raw_devices = payload.get("devices") if isinstance(payload.get("devices"), list) else payload
@@ -323,7 +364,7 @@ class AirthingsCloudClient:
             )
         if response.status_code >= 400:
             raise AirthingsCloudRequestError(
-                f"Airthings latest sample failed with status {response.status_code}: {response.text}"
+                f"Airthings latest sample failed with status {response.status_code}."
             )
         payload = response.json()
         raw_results = payload.get("results") if isinstance(payload.get("results"), list) else payload

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from piphi_network_airthings.cloud.models import (
     MOLD_RISK_METRIC_KEY,
     AirthingsCloudDevice,
@@ -83,3 +85,45 @@ def test_capabilities_for_wave_mini_include_mold_risk() -> None:
     )
 
     assert MOLD_RISK_METRIC_KEY in capabilities
+
+
+def test_sample_rejects_nonfinite_and_out_of_range_metrics_without_raw_payload() -> None:
+    sample = AirthingsLatestSample.from_api_payload(
+        "2930046980",
+        {
+            "data": {
+                "recorded": "2026-09-29T12:00:00+00:00",
+                "temp": "NaN",
+                "humidity": 101,
+                "co2": 850,
+                "battery": -1,
+                "privateUpstreamField": "must-not-leak",
+            }
+        },
+    )
+
+    assert sample.metrics["temperature_c"] is None
+    assert sample.metrics["humidity_percent"] is None
+    assert sample.metrics["co2_ppm"] == 850.0
+    assert sample.metrics["battery_percent"] is None
+    assert sample.state_payload()["metadata"] == {"serial_number": "2930046980"}
+    assert "privateUpstreamField" not in str(sample.state_payload())
+
+
+def test_sample_rejects_overflowing_numbers_and_uses_safe_measurement_time() -> None:
+    sample = AirthingsLatestSample.from_api_payload(
+        "2930046980",
+        {
+            "data": {
+                "recorded": 10**10000,
+                "co2": 10**10000,
+                "battery": "1e999",
+                "rssi": "-1e999",
+            }
+        },
+    )
+
+    assert sample.metrics["co2_ppm"] is None
+    assert sample.metrics["battery_percent"] is None
+    assert sample.metrics["rssi_dbm"] is None
+    assert datetime.fromisoformat(sample.recorded_at).tzinfo is not None

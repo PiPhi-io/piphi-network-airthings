@@ -19,15 +19,17 @@ on:
         description: Explicit version when release_type is custom
         required: false
         type: string
+      existing_tag:
+        description: Publish an existing vX.Y.Z tag without changing source or tags
+        required: false
+        type: string
       push_latest:
         description: Also publish latest for stable releases
         required: true
         default: true
         type: boolean
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: airthings-release-${{ github.event.repository.full_name }}
@@ -38,20 +40,53 @@ env:
   DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
 
 jobs:
-  release:
+  preflight:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      existing_tag: ${{ steps.existing.outputs.tag }}
+      tag_commit: ${{ steps.existing.outputs.commit }}
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Require default branch dispatch
+        run: |
+          [[ "${GITHUB_REF_NAME}" == "${{ github.event.repository.default_branch }}" ]] || { echo "Releases must run from the default branch." >&2; exit 1; }
+
+      - name: Resolve existing release tag
+        id: existing
+        env:
+          EXISTING_TAG: ${{ inputs.existing_tag }}
+        run: |
+          echo "tag=" >> "$GITHUB_OUTPUT"
+          echo "commit=" >> "$GITHUB_OUTPUT"
+          if [[ -z "${EXISTING_TAG}" ]]; then
+            exit 0
+          fi
+          [[ "${EXISTING_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "existing_tag must be a stable semantic-version tag" >&2; exit 1; }
+          git fetch --no-tags origin "refs/tags/${EXISTING_TAG}"
+          TAG_COMMIT=$(git rev-parse "FETCH_HEAD^{commit}")
+          [[ "${TAG_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || { echo "existing_tag did not resolve to a commit" >&2; exit 1; }
+          echo "tag=${EXISTING_TAG}" >> "$GITHUB_OUTPUT"
+          echo "commit=${TAG_COMMIT}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Require default branch
-        run: |
-          if [[ "${GITHUB_REF_NAME}" != "${{ github.event.repository.default_branch }}" ]]; then
-            echo "Releases must run from the default branch." >&2
-            exit 1
-          fi
+          ref: ${{ needs.preflight.outputs.tag_commit || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -69,8 +104,12 @@ jobs:
 
       - name: Resolve release version
         id: version
+        env:
+          EXISTING_TAG: ${{ needs.preflight.outputs.existing_tag }}
         run: |
-          if [[ "${{ inputs.release_type }}" == "custom" ]]; then
+          if [[ -n "${EXISTING_TAG}" ]]; then
+            VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          elif [[ "${{ inputs.release_type }}" == "custom" ]]; then
             [[ -n "${{ inputs.custom_version }}" ]] || { echo "custom_version is required" >&2; exit 1; }
             VERSION=$(python scripts/release.py --set-version "${{ inputs.custom_version }}" --docker-image "${RELEASE_IMAGE}")
           else
@@ -79,23 +118,37 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           [[ "$VERSION" == *-* ]] && echo "stable=false" >> "$GITHUB_OUTPUT" || echo "stable=true" >> "$GITHUB_OUTPUT"
 
+      - name: Validate bumped release contract
+        run: |
+          python -m pip install -e .[dev]
+          python -m compileall -q src tests scripts
+          python -m json.tool src/manifest.json >/dev/null
+          python -m json.tool src/behaviors.json >/dev/null
+          pytest
+
       - name: Validate release policy
+        env:
+          EXISTING_TAG: ${{ needs.preflight.outputs.existing_tag }}
+          TAG_COMMIT: ${{ needs.preflight.outputs.tag_commit }}
         run: |
           if [[ "${{ inputs.push_latest }}" == "true" && "${{ steps.version.outputs.stable }}" != "true" ]]; then
             echo "latest cannot point at a prerelease" >&2
             exit 1
           fi
+          if [[ -n "${EXISTING_TAG}" && "${{ inputs.push_latest }}" == "true" ]]; then
+            echo "Recovery publication from an existing tag must set push_latest=false" >&2
+            exit 1
+          fi
           TAG="v${{ steps.version.outputs.version }}"
-          ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 || { echo "$TAG already exists" >&2; exit 1; }
+          if [[ -n "${EXISTING_TAG}" ]]; then
+            [[ "${EXISTING_TAG}" == "${TAG}" ]] || { echo "${EXISTING_TAG} does not match package version ${{ steps.version.outputs.version }}" >&2; exit 1; }
+            [[ "$(git rev-parse HEAD)" == "${TAG_COMMIT}" ]] || { echo "Checked-out source does not match resolved ${EXISTING_TAG}" >&2; exit 1; }
+            git fetch --no-tags origin "refs/tags/${EXISTING_TAG}"
+            [[ "$(git rev-parse "FETCH_HEAD^{commit}")" == "${TAG_COMMIT}" ]] || { echo "${EXISTING_TAG} moved after preflight" >&2; exit 1; }
+          else
+            ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 || { echo "$TAG already exists" >&2; exit 1; }
+          fi
           [[ -n "${DOCKERHUB_OIDC_CONNECTIONID}" ]] || { echo "Docker Hub OIDC connection ID is missing" >&2; exit 1; }
-
-      - name: Commit release metadata
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml src/manifest.json
-          git commit -m "release: v${{ steps.version.outputs.version }}"
-          git tag "v${{ steps.version.outputs.version }}"
 
       - name: Exchange Docker Hub OIDC token
         id: docker_oidc
@@ -112,31 +165,107 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      - name: Prepare image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.RELEASE_IMAGE }}
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest,enable=${{ inputs.push_latest && steps.version.outputs.stable == 'true' }}
+      - name: Prove immutable version tag is absent
+        run: |
+          python scripts/assert_docker_tag_absent.py \
+            --image "${RELEASE_IMAGE}" \
+            --tag "${{ steps.version.outputs.version }}"
 
-      - name: Build and push image
+      - name: Commit release metadata
+        if: ${{ needs.preflight.outputs.existing_tag == '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            pyproject.toml \
+            src/manifest.json \
+            docs/capability-catalog.json \
+            experiences/air-quality/package.source.json
+          git commit -m "release: v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+
+      - name: Bind image to reviewed release contracts
+        id: contracts
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "manifest_sha256=$(sha256sum src/manifest.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "behaviors_sha256=$(sha256sum src/behaviors.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and stage immutable multi-architecture candidate
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.RELEASE_IMAGE }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.contracts.outputs.revision }}
+            org.opencontainers.image.source=https://github.com/PiPhi-io/piphi-network-airthings
+            io.piphi.manifest.sha256=${{ steps.contracts.outputs.manifest_sha256 }}
+            io.piphi.behaviors.sha256=${{ steps.contracts.outputs.behaviors_sha256 }}
+          build-args: |
+            RELEASE_VERSION=${{ steps.version.outputs.version }}
+            SOURCE_REVISION=${{ steps.contracts.outputs.revision }}
+            SOURCE_REPOSITORY=https://github.com/PiPhi-io/piphi-network-airthings
+            MANIFEST_SHA256=${{ steps.contracts.outputs.manifest_sha256 }}
+            BEHAVIORS_SHA256=${{ steps.contracts.outputs.behaviors_sha256 }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Publish release revision
+      - name: Pull exact native manifest from staged digest
+        run: |
+          docker pull \
+            --platform linux/amd64 \
+            "${RELEASE_IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Qualify exact release candidate across restart
+        run: |
+          python scripts/qualify_release_image.py \
+            --image "${RELEASE_IMAGE}@${{ steps.build.outputs.digest }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --revision "${{ steps.contracts.outputs.revision }}" \
+            --manifest-sha256 "${{ steps.contracts.outputs.manifest_sha256 }}" \
+            --behaviors-sha256 "${{ steps.contracts.outputs.behaviors_sha256 }}"
+
+      - name: Publish immutable release revision
+        if: ${{ needs.preflight.outputs.existing_tag == '' }}
         run: |
           git push origin HEAD:${GITHUB_REF_NAME}
           git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Promote qualified digest without rebuilding
+        run: |
+          SOURCE="${RELEASE_IMAGE}@${{ steps.build.outputs.digest }}"
+          docker buildx imagetools create \
+            --tag "${RELEASE_IMAGE}:${{ steps.version.outputs.version }}" \
+            "$SOURCE"
+          if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+            docker buildx imagetools create \
+              --tag "${RELEASE_IMAGE}:latest" \
+              "$SOURCE"
+          fi
+
+      - name: Verify promoted digest and platforms
+        run: |
+          python scripts/verify_published_image.py \
+            --image "${RELEASE_IMAGE}:${{ steps.version.outputs.version }}" \
+            --digest "${{ steps.build.outputs.digest }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --revision "${{ steps.contracts.outputs.revision }}" \
+            --manifest-sha256 "${{ steps.contracts.outputs.manifest_sha256 }}" \
+            --behaviors-sha256 "${{ steps.contracts.outputs.behaviors_sha256 }}"
+          if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+            python scripts/verify_published_image.py \
+              --image "${RELEASE_IMAGE}:latest" \
+              --digest "${{ steps.build.outputs.digest }}" \
+              --version "${{ steps.version.outputs.version }}" \
+              --revision "${{ steps.contracts.outputs.revision }}" \
+              --manifest-sha256 "${{ steps.contracts.outputs.manifest_sha256 }}" \
+              --behaviors-sha256 "${{ steps.contracts.outputs.behaviors_sha256 }}"
+          fi
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

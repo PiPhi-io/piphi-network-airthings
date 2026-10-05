@@ -41,6 +41,7 @@
               "label": "Metric",
               "type": "enum",
               "required": true,
+              "default": "co2_ppm",
               "options": [
                 "radon_short_term_bqm3",
                 "radon_long_term_bqm3",
@@ -59,7 +60,8 @@
               "name": "value",
               "label": "Threshold",
               "type": "number",
-              "required": true
+              "required": true,
+              "default": 1000
             }
           ],
           "capability": "sensor.metric_above",
@@ -93,6 +95,7 @@
               "label": "Metric",
               "type": "enum",
               "required": true,
+              "default": "battery_percent",
               "options": [
                 "radon_short_term_bqm3",
                 "radon_long_term_bqm3",
@@ -111,7 +114,8 @@
               "name": "value",
               "label": "Threshold",
               "type": "number",
-              "required": true
+              "required": true,
+              "default": 20
             }
           ],
           "capability": "sensor.metric_below",
@@ -239,6 +243,32 @@
           "ui": {
             "group": "when"
           }
+        },
+        {
+          "id": "cloud_poll_failed",
+          "label": "Cloud readings go offline",
+          "description": "Start once when this monitor stops returning cloud readings.",
+          "capability": "telemetry.availability",
+          "runtime": {
+            "event": "airthings.cloud.sample.failed",
+            "source": "integration"
+          },
+          "ui": {
+            "group": "when"
+          }
+        },
+        {
+          "id": "cloud_poll_recovered",
+          "label": "Cloud readings recover",
+          "description": "Start once when cloud readings resume after an outage.",
+          "capability": "telemetry.availability",
+          "runtime": {
+            "event": "airthings.cloud.sample.recovered",
+            "source": "integration"
+          },
+          "ui": {
+            "group": "when"
+          }
         }
       ]
     }
@@ -247,7 +277,7 @@
     {
       "id": "airthings_air_quality_check",
       "label": "Watch for unhealthy Airthings readings",
-      "description": "Starts when Airthings cloud data changes and refreshes the saved monitor when a key metric rises.",
+      "description": "Starts when Airthings cloud data changes and sends an in-app warning when CO2 rises above 1000 ppm.",
       "category": "Air quality",
       "deviceKey": "airthings_cloud_monitor",
       "config": {
@@ -296,30 +326,25 @@
         },
         "actions": [
           {
-            "id": "refresh_readings",
-            "label": "Refresh Airthings readings",
-            "action": "refresh",
-            "capability": "device.refresh",
-            "sourceRef": {
-              "integrationId": "{{integrationId}}",
-              "integrationKey": "{{integrationKey}}",
-              "configId": "{{configId}}",
-              "behaviorDeviceKey": "airthings_cloud_monitor",
-              "optionKey": "refresh",
-              "capability": "device.refresh"
+            "id": "send_air_quality_warning",
+            "label": "Send air quality warning",
+            "action": "builtin.notification.send",
+            "runtime": {
+              "command": "builtin.notification.send",
+              "semanticType": "notification",
+              "actionContractVersion": 1
             },
-            "target": {
-              "mode": "selection",
-              "configIds": [
-                "{{configId}}"
-              ]
+            "parameters": {
+              "title": "Airthings air quality warning",
+              "message": "CO2 is above 1000 ppm. Bring in fresh air and check the room.",
+              "dedupe_window_seconds": 900
             },
             "failure": {
               "strategy": "retry_then_continue",
               "retry": {
                 "maxAttempts": 2,
                 "delaySeconds": 2,
-                "timeoutSeconds": 15,
+                "timeoutSeconds": 10,
                 "backoff": "fixed"
               },
               "continueOnPartialFailure": true

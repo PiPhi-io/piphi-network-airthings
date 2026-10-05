@@ -6,11 +6,43 @@ import httpx
 import pytest
 
 from piphi_network_airthings.cloud.client import (
+    ACCOUNTS_BASE_URL_ENV,
+    ALLOW_INSECURE_TEST_ENDPOINTS_ENV,
+    CONSUMER_BASE_URL_ENV,
     AirthingsCloudAuthError,
     AirthingsCloudClient,
     AirthingsCloudRequestError,
     AirthingsCredentials,
+    airthings_cloud_client_from_environment,
 )
+
+
+def test_runtime_client_uses_https_environment_overrides(monkeypatch) -> None:
+    monkeypatch.setenv(ACCOUNTS_BASE_URL_ENV, "https://accounts.example.test/")
+    monkeypatch.setenv(CONSUMER_BASE_URL_ENV, "https://consumer.example.test/")
+
+    client = airthings_cloud_client_from_environment()
+
+    assert client.accounts_base_url == "https://accounts.example.test"
+    assert client.consumer_base_url == "https://consumer.example.test"
+
+
+def test_runtime_client_rejects_insecure_override_without_test_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv(ACCOUNTS_BASE_URL_ENV, "http://127.0.0.1:38001")
+
+    with pytest.raises(ValueError, match=ALLOW_INSECURE_TEST_ENDPOINTS_ENV):
+        airthings_cloud_client_from_environment()
+
+
+def test_runtime_client_allows_insecure_fixture_with_explicit_test_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv(ACCOUNTS_BASE_URL_ENV, "http://127.0.0.1:38001/")
+    monkeypatch.setenv(CONSUMER_BASE_URL_ENV, "http://127.0.0.1:38001/")
+    monkeypatch.setenv(ALLOW_INSECURE_TEST_ENDPOINTS_ENV, "true")
+
+    client = airthings_cloud_client_from_environment()
+
+    assert client.accounts_base_url == "http://127.0.0.1:38001"
+    assert client.consumer_base_url == "http://127.0.0.1:38001"
 
 
 @pytest.mark.asyncio
@@ -140,3 +172,62 @@ async def test_latest_sample_404_raises_request_error() -> None:
                 credentials=AirthingsCredentials(client_id="client-1", client_secret="secret-1"),
                 serial_number="missing-serial",
             )
+
+
+@pytest.mark.asyncio
+async def test_secret_rotation_uses_distinct_token_and_account_cache_entries() -> None:
+    token_requests = 0
+    account_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal token_requests, account_requests
+        if request.url.path == "/v1/token":
+            token_requests += 1
+            return httpx.Response(
+                200,
+                json={"access_token": f"token-{token_requests}", "expires_in": 3600},
+            )
+        if request.url.path == "/v1/accounts":
+            account_requests += 1
+            return httpx.Response(200, json={"accounts": [{"id": f"account-{account_requests}"}]})
+        if request.url.path.endswith("/devices"):
+            return httpx.Response(200, json={"devices": []})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="https://example.test") as http_client:
+        client = AirthingsCloudClient(
+            accounts_base_url="https://example.test",
+            consumer_base_url="https://example.test",
+            http_client=http_client,
+        )
+        await client.list_devices(AirthingsCredentials("shared-client", "old-secret"))
+        await client.list_devices(AirthingsCredentials("shared-client", "new-secret"))
+
+    assert token_requests == 2
+    assert account_requests == 2
+
+
+@pytest.mark.asyncio
+async def test_upstream_error_body_is_not_exposed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/token":
+            return httpx.Response(
+                500,
+                text="upstream-secret-body",
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="https://example.test") as http_client:
+        client = AirthingsCloudClient(
+            accounts_base_url="https://example.test",
+            consumer_base_url="https://example.test",
+            retry_attempts=1,
+            http_client=http_client,
+        )
+        with pytest.raises(AirthingsCloudRequestError) as exc_info:
+            await client.list_devices(AirthingsCredentials("client-1", "secret-1"))
+
+    assert "upstream-secret-body" not in str(exc_info.value)
+    assert str(exc_info.value) == "Airthings token request failed with status 500."
