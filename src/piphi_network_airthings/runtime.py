@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from piphi_runtime_kit_python import (
@@ -96,6 +96,14 @@ automation_registry = AutomationRegistry(
 )
 poll_tasks: dict[str, asyncio.Task[Any]] = {}
 poll_status: dict[str, dict[str, Any]] = {}
+
+
+async def _refresh_all_state() -> None:
+    for config_id in registry.ids():
+        await poll_once(config_id)
+
+
+starter.state.provide(_refresh_all_state, source=INTEGRATION_ID)
 
 
 async def _refresh_registered_device(
@@ -1238,23 +1246,19 @@ async def entities(request: Request) -> dict[str, Any]:
 
 
 @router.get("/state")
-async def state(request: Request) -> dict[str, Any]:
+async def state(
+    request: Request,
+    refresh: bool = Query(default=False),
+    refresh_request_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     authorize_runtime_request(request, runtime_context=runtime)
-    return {
-        "entries": {
-            config_id: {
-                "config_id": config_id,
-                "device_id": entry.get("serial_number"),
-                "latest_state": dict(
-                    registry.state_snapshots.get(config_id, {}).get("state", {})
-                ),
-                "last_updated": registry.state_snapshots.get(config_id, {}).get(
-                    "last_updated"
-                ),
-            }
-            for config_id, entry in registry.entries.items()
-        },
-    }
+    try:
+        return await starter.state.response(
+            refresh=refresh,
+            refresh_request_id=refresh_request_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/events", response_model=IntegrationEventListResponse)
