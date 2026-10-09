@@ -3,7 +3,7 @@
   "identity": {
     "publisher_id": "io.piphi",
     "package_id": "airthings-air-quality",
-    "version": "0.1.6"
+    "version": "0.1.7"
   },
   "name": "Airthings Air Quality",
   "description": "A focused overview of the Airthings readings that matter most at a glance.",
