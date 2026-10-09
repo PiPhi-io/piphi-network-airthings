@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "integration_id": "airthings-consumer-cloud-api",
-  "catalog_version": "0.1.6",
+  "catalog_version": "0.1.7",
   "completion": {
     "status": "implementation_complete",
     "scope": "Airthings Consumer Cloud devices and readings declared by this integration",
