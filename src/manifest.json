@@ -323,5 +323,8 @@
         "refresh"
       ]
     }
-  ]
+  ],
+  "onboarding": {
+    "mode": "account"
+  }
 }
